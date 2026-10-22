@@ -30,6 +30,7 @@ def pushed_code_tips(remote, updates):
                 paths.update(
                     git(
                         "diff-tree",
+                        "--no-renames",
                         "--root",
                         "-m",
                         "--no-commit-id",
@@ -40,7 +41,7 @@ def pushed_code_tips(remote, updates):
                     )
                 )
         else:
-            paths.update(git("diff", "--name-only", previous, local))
+            paths.update(git("diff", "--no-renames", "--name-only", previous, local))
         if (
             any(not path.endswith(".md") and path != "LICENSE" for path in paths)
             and local not in tips

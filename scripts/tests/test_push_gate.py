@@ -154,6 +154,18 @@ class PushGateTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(self.recorded(), ["good"])
 
+    def test_checks_source_renamed_as_documentation(self):
+        self.git("config", "diff.renames", "true")
+        self.git("mv", "probe.py", "probe.md")
+        self.git("commit", "--quiet", "-m", "Rename source as documentation")
+        renamed = self.git("rev-parse", "HEAD")
+        for previous in (self.base, ZERO):
+            with self.subTest(previous=previous):
+                self.record.unlink(missing_ok=True)
+                result = self.push(self.update(renamed, previous, "renamed"))
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(self.recorded(), ["good"])
+
     def test_skips_documentation_updates_and_deleted_refs(self):
         (self.repository / "README.md").write_text("Documentation\n")
         self.git("add", "README.md")
