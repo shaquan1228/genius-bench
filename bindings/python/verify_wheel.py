@@ -80,7 +80,7 @@ def verify(wheel, python, uv, offline, expected_source_hash=None):
             cwd=temporary,
             env=clean,
         )
-        requirements = temporary / "requirements.txt"
+        requirements = temporary / "pylock.toml"
         export = [
             uv,
             "export",
