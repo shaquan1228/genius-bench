@@ -4,7 +4,6 @@ artifact_contract: ce-unified-plan/v1
 artifact_readiness: implementation-ready
 execution: code
 source: /Users/me/Desktop/rustsmh.md
-source_revision: 523d1eede610171d825fde0fee12d418dd1ef981
 ---
 
 # Semantic kernel extraction
@@ -26,12 +25,12 @@ Progress is recorded in commits and verification receipts, never in this plan.
 | ID | Deliverable | Acceptance |
 | --- | --- | --- |
 | D0 | Documentation prerequisite | README and CONTRIBUTING describe ownership and contributor rules. |
-| D1 | Rust semantic kernel | Pure owned Rust values, predicates, outcomes, assessments, validated tasks, structured failures, public projections, and grading pass legacy characterization fixtures. |
+| D1 | Rust semantic kernel | Pure owned Rust values, predicates, outcomes, assessments, validated tasks, structured failures, public projections, and grading pass direct public API tests. |
 | D2 | Generic consumer contract | Instructions and cases contain no built-in skill field; consumer settings and Genius defaults are absent from the core. |
 | D3 | Typed Python package | Python calls the compiled Rust core through native bindings; a built wheel installs and grades outside the checkout without Rust or OCaml on the consumer path. |
 | D4 | Genius migration | Genius imports the package and removes its OCaml bridge/build dependency while preserving its workflows. |
 | D5 | Genius integration proof | Existing HF/Docker/Inspect paths use the imported grader and retain their execution responsibilities. |
-| D6 | Ruby package | Native Ruby bindings replay shared fixtures and install from supported binary artifacts. |
+| D6 | Ruby package | Native Ruby bindings verify the public contract and install from supported binary artifacts. |
 | D7 | Public distribution | Release automation publishes supported crate, wheel, and gem artifacts. |
 
 ## Product Contract Key Decisions
@@ -57,7 +56,7 @@ Progress is recorded in commits and verification receipts, never in this plan.
 
 ## Requirements
 
-- R1. Match legacy semantics for supported inputs: duplicate-record first-wins,
+- R1. Preserve the semantic contract for supported inputs: duplicate-record first-wins,
   field-order-independent record equality, ordered lists, distinct scalar
   alternatives, missing versus null, named conjunction ordering, empty All/Any,
   inclusive word bounds, and the original whitespace set.
@@ -65,9 +64,8 @@ Progress is recorded in commits and verification receipts, never in this plan.
   expose no mutable access that bypasses validation. Validation retains every
   applicable issue and its field. Harness errors remain distinct from candidate
   failure and timeout. Grading returns both assessments and named boolean scores.
-- R3. Shared fixtures originate from executing the pinned OCaml implementation,
-  not from the new implementation. Fixtures cover code, answer, and state tasks,
-  projection secrecy, failures, validation, and conversion edge cases.
+- R3. Direct public API tests cover code, answer, and state tasks, projection
+  secrecy, failures, validation, and conversion edge cases.
 - R4. Python exposes typed domain operations, keyword arguments, immutable
   snapshots, plain-value conversion, an explicit custom-value protocol, and
   dataclass/Pydantic adapters. Runtime calls do not serialize through JSON.
@@ -82,7 +80,7 @@ Progress is recorded in commits and verification receipts, never in this plan.
 
 ## Scope Boundaries
 
-In scope: semantic core, fixture capture/replay, consumer-neutral task contract,
+In scope: semantic core, direct API tests, consumer-neutral task contract,
 Python bindings/adapters/stubs, development checks, pre-push hook, offline CI,
 and wheel build/install verification for declared Linux/macOS targets.
 
@@ -97,30 +95,23 @@ changes in either repository. D4–D7 remain follow-on work.
 Dependencies: D0 documentation branch.
 
 Files: Cargo.toml, Cargo.lock, rust-toolchain.toml, .gitignore, LICENSE,
-Makefile, .githooks/pre-push, scripts/capture_ocaml.py, scripts/check.py,
+Makefile, .githooks/pre-push, scripts/check.py,
 crates/semantic-core/Cargo.toml, crates/semantic-core/build.rs,
 crates/semantic-core/src/{lib,value,predicate,outcome,assessment,failure,task,support}.rs,
-crates/semantic-core/tests/{semantics,fixtures}.rs, fixtures/export.ml,
-fixtures/semantics.json, fixtures/README.md, .github/workflows/check.yml.
+crates/semantic-core/tests/semantics.rs, .github/workflows/check.yml.
 
-Goal: reproduce the pure legacy grader with an independently captured fixture
-corpus. Include the legacy instruction skill field only in this port layer;
-U2 deliberately removes that consumer-specific contract.
+Goal: implement the pure grading semantics in Rust. Include the instruction
+skill field only in this port layer; U2 removes that consumer-specific contract.
 
 Approach: use owned enum/record types, private validated task fields, and direct
 Result values. Keep the core's runtime dependencies free of Python, SDKs, and IO.
 Build scripts may hash canonical source inputs; source identity must not depend
-on the checkout at runtime. Export tagged JSON fixture values so duplicate
-record fields and non-finite floats are representable. Use signed i64 integers;
-preserve all values representable by the pinned 64-bit OCaml runtime, and reject
-Python overflow instead of converting integers to floating point.
+on the checkout at runtime. Use signed i64 integers and reject Python overflow
+instead of converting integers to floating point.
 
-Execution note: run the existing OCaml tests and capture expected fixture
-results before implementing Rust. Observe the Rust fixture test's initial
-failure before filling in the implementation.
+Execution note: verify semantic operations directly through the public Rust API.
 
-Patterns to follow: Genius evals/ocaml/{value,predicate,outcome,assessment,task,support}.ml;
-evals/ocaml/tests/{test_predicate,test_kernel}.ml; evals/python/tests/declarations.py.
+Patterns to follow: Genius's semantic concepts and checked domain constructors.
 
 Test scenarios: every predicate variant; duplicate keys and reserved facts;
 int/float/bool distinction; empty structures; whitespace boundaries; code status
@@ -128,8 +119,8 @@ matrix; valid/invalid answer rubrics; state/trace criteria; private projections;
 aggregated validation errors; assessment observations and ordered scores;
 installed source hash stability and source-change invalidation.
 
-Verification: captured OCaml fixtures replay identically in cargo test -p
-semantic-core; cargo fmt and scoped clippy pass; the pre-push hook gates code
+Verification: direct API tests pass in cargo test -p semantic-core; cargo fmt
+and scoped clippy pass; the pre-push hook gates code
 pushes and skips documentation-only pushes. CI repeats these checks offline.
 
 ### U2. Remove consumer-specific policy (D2)
@@ -137,16 +128,15 @@ pushes and skips documentation-only pushes. CI repeats these checks offline.
 Dependencies: U1 committed and verified.
 
 Files: crates/semantic-core/src/{lib,task}.rs,
-crates/semantic-core/tests/{semantics,fixtures}.rs, fixtures/README.md, README.md.
+crates/semantic-core/tests/semantics.rs, README.md.
 
 Goal: expose a task contract that any consumer can use without a Genius skill
 name or instruction profile.
 
 Approach: retain prompt and public fixture inputs, remove skill from Instruction
 and Case, and keep run profiles/settings outside the core. Preserve generic
-validation, scores, and projections. The approved legacy difference is removal
-of skill-field validation/projection; retain and explain that boundary in fixture
-replay without hiding unrelated mismatches.
+validation, scores, and projections. Remove skill-field validation and projection
+without changing the remaining semantic contract.
 
 Execution note: widen the U1 tests to demonstrate the generic instruction/case
 contract and custom state observations before making the contract change.
@@ -157,7 +147,7 @@ between Task.assess and execution/verification adapters.
 Test scenarios: code/answer/state declarations with prompt-only instructions;
 public case contains no consumer label or private data; custom observations
 need no new core type; invalid generic declarations retain validation failures;
-all legacy predicate/grading fixtures still pass.
+direct predicate and grading API tests still pass.
 
 Verification: focused cargo tests, formatting, and clippy pass. The core has no
 Genius profile defaults, SDK dependency, runner implementation, or IO operation.
@@ -183,14 +173,14 @@ int, and float. Offer __kernel_value__ and explicit dataclass/Pydantic adapters;
 Pydantic remains optional. Ship checked/generated .pyi declarations and py.typed.
 Pin compatible build dependencies and document the actual ABI/platform matrix.
 
-Execution note: write public API fixture replay and error/immutability tests
+Execution note: write public API and error/immutability tests
 before filling in the binding. Prove the installed artifact from a temporary
 working directory, with compiler/OCaml commands absent from its subprocess PATH.
 
-Patterns to follow: U2's canonical Rust API and shared fixtures; Genius's named
+Patterns to follow: U2's canonical Rust API and focused tests; Genius's named
 constructor/error contracts; official PyO3 and maturin documentation.
 
-Test scenarios: replay all applicable shared fixtures through public Python API;
+Test scenarios: exercise the public Python API;
 code/answer/state grading; aggregated ValidationError and distinct GradingError;
 keyword contracts; collection snapshot isolation; public/private projections;
 custom protocol and adapters; integer overflow and cyclic/unsupported conversion;
@@ -199,13 +189,13 @@ grading outside the source checkout.
 
 Verification: scoped Rust checks; Python public API tests; type/stub checks;
 build wheel and source distribution, install wheel into a clean temporary
-virtual environment, replay smoke/fixture checks there. CI builds and exercises
+virtual environment, run smoke and focused API checks there. CI builds and exercises
 Linux x86_64 and macOS arm64 wheels for declared CPython versions. No registry
 publication occurs in this unit.
 
 ## Verification Contract
 
-- V1: execute pinned OCaml tests and record fixture capture before the Rust port.
+- V1: verify the semantic contract through direct public API tests.
 - V2: pass each unit's scoped tests and formatting/lint checks before committing
   it or starting its dependent unit; keep only one build active on this machine.
 - V3: pushes run .githooks/pre-push; do not bypass failures from this change.

@@ -1,7 +1,7 @@
 # Genius Bench
 
 A shared grading core for evaluation libraries, starting with the
-[Genius eval library](https://github.com/shaquan1228/genius/tree/523d1eede610171d825fde0fee12d418dd1ef981/evals).
+[Genius eval library](https://github.com/shaquan1228/genius).
 Task declarations and observed outcomes produce assessments with named scores
 and supporting evidence.
 
