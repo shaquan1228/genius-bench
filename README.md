@@ -6,8 +6,7 @@ Task declarations and observed outcomes produce assessments with named scores
 and supporting evidence.
 
 The Rust core, typed Python package, and native Ruby gem are implemented.
-Genius's runtime migration, Ruby binary gem automation, and registry publication
-remain separate work.
+Genius's runtime migration and registry publication remain separate work.
 
 - Rust owns values, predicates, declaration validation, public case projections,
   grading, and structured failures. Grading performs no IO.
@@ -74,6 +73,19 @@ Platform gems built by `rake native gem` install and grade without Rust; the
 source gem built by `rake gem:source` vendors the semantic core and requires
 Rust, libclang, and rb_sys at install time. `GeniusBench.version` and `GeniusBench.source_hash` report
 the installed core's identity.
+
+CI cross-compiles platform gems with rb-sys-dock and installs each one on the
+matching runner across Ruby 3.2, 3.3, and 3.4:
+
+| Platform | Gem platform | Compiled Ruby ABIs | Installed on |
+| --- | --- | --- | --- |
+| Linux x86_64, glibc | x86_64-linux | 3.2, 3.3, 3.4 | ubuntu-24.04 |
+| macOS arm64 | arm64-darwin | 3.2, 3.3, 3.4 | macos-14 |
+
+The minimum glibc and macOS versions are those of the rb-sys-dock images for
+rb_sys 0.9.130; the install matrix is the verified floor. Other Rubies, musl
+Linux, and other architectures install from the source gem with Rust present.
+No gem is published to a registry.
 
 For development, install Rust from `rust-toolchain.toml`, uv, CPython 3.12, and
 Ruby 3.3 from `.tool-versions`:
