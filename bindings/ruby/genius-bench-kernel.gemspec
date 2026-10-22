@@ -10,7 +10,7 @@ Gem::Specification.new do |spec|
   spec.license = "MIT"
   spec.homepage = "https://github.com/shaquan1228/genius-bench"
   spec.required_ruby_version = ">= 3.2"
-  spec.files = Dir["lib/**/*.rb", "ext/**/*.{rs,rb,toml}"]
+  spec.files = Dir["lib/**/*.rb", "sig/**/*.rbs", "ext/**/*.{rs,rb,toml}", "crates/**/*.{rs,toml}", "Cargo.{toml,lock}", "LICENSE"]
   spec.require_paths = ["lib"]
   spec.extensions = ["ext/semantic_ruby/extconf.rb"]
   spec.metadata["cargo_crate_name"] = "semantic-ruby"
