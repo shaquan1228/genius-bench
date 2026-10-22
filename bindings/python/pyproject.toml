@@ -1,0 +1,23 @@
+[build-system]
+requires = ["maturin==1.15.0"]
+build-backend = "maturin"
+
+[project]
+name = "genius-bench-kernel"
+version = "0.1.0"
+requires-python = ">=3.12"
+description = "Typed native evaluation semantics"
+license = "MIT"
+
+[dependency-groups]
+dev = ["maturin==1.15.0", "pytest==9.1.1", "mypy==2.4.0", "pydantic==2.14.1", "ruff==0.17.1"]
+
+[tool.maturin]
+locked = true
+exclude = [{ path = "python/kernel/*.so", format = "sdist" }, { path = "python/kernel/__pycache__/**", format = "sdist" }]
+python-source = "python"
+module-name = "kernel._native"
+include = [{ path = "python/kernel/*.pyi", format = ["sdist", "wheel"] }, { path = "python/kernel/py.typed", format = ["sdist", "wheel"] }]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

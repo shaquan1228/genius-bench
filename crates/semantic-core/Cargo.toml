@@ -1,0 +1,14 @@
+[package]
+name = "semantic-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license-file.workspace = true
+repository.workspace = true
+description = "Pure task validation, predicate assessment, and grading"
+
+[build-dependencies]
+sha2 = "=0.10.9"
+
+[dev-dependencies]
+sha2 = "=0.10.9"
