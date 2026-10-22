@@ -5,27 +5,40 @@ A shared grading core for evaluation libraries, starting with the
 Task declarations and observed outcomes produce assessments with named scores
 and supporting evidence.
 
-Status: the Rust semantic core and generic task API are implemented. A typed
-Python binding is next.
-
-The intended boundary is small:
+The Rust core and typed Python package are implemented. Genius's runtime
+migration and Ruby bindings remain separate work. No registry publication is
+configured.
 
 - Rust owns values, predicates, declaration validation, public case projections,
   grading, and structured failures. Grading performs no IO.
-- Python and Ruby adapt host values and calls to the same core semantics.
-- Genius imports the semantic kernel and retains HF Jobs, Docker, Inspect,
-  execution, verification environments, and evidence collection. Its SDK types
-  and provider settings stay in Genius.
+- Python adapts host values and direct domain calls through a native extension.
+- Genius retains HF Jobs, Docker, Inspect, execution, verification environments,
+  evidence collection, SDK types, provider settings, and consumer defaults.
 
 Instructions contain only a prompt. Public cases contain an identity, prompt,
-and files. Consumer labels, profiles, and execution defaults stay outside the core.
+and files, including explicitly public tools. Tasks own immutable snapshots;
+public cases omit reference answers, private checks, and verifier stdin.
 
-Genius is the first consumer and the proof of concept. The first milestone is
-for its existing eval library to use an installable Python binding to this core
-while preserving grading behavior and runner workflows. Ruby bindings follow
-that integration proof.
+Install a built wheel to import `kernel` without Rust or OCaml:
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the contributor rules.
+```sh
+python -m pip install path/to/genius_bench_kernel-*.whl
+```
 
-The [extraction plan](docs/plans/2026-10-22-semantic-kernel-extraction-plan.md)
-defines the deliverables and verification gates.
+For development, install Rust from `rust-toolchain.toml`, uv, and CPython 3.12:
+
+```sh
+cargo fetch --locked
+uv sync --project bindings/python --locked --no-install-project --python 3.12
+make check
+make install-hooks
+```
+
+`make check` runs Rust checks and verifies a fresh wheel installation built from
+an extracted source distribution, including shared fixtures and type checks.
+
+See the [Python package guide](bindings/python/README.md) for API examples,
+adapters, supported platforms, source identity, and packaging procedures;
+[CONTRIBUTING.md](CONTRIBUTING.md) for contributor rules; and the
+[extraction plan](docs/plans/2026-10-22-semantic-kernel-extraction-plan.md)
+for deliverables and verification gates.

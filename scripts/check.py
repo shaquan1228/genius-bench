@@ -91,15 +91,41 @@ def check_pushed_tips(tips, cargo):
             )
 
 
-def check(cargo):
+def check(cargo, uv, python):
     commands = [
         [sys.executable, "-m", "unittest", "discover", "-s", "scripts/tests"],
         [cargo, "test", "--locked", "--offline", "-p", "semantic-core"],
         [cargo, "fmt", "--all", "--", "--check"],
-        [cargo, "clippy", "--locked", "--offline", "-p", "semantic-core", "--all-targets", "--", "-D", "warnings"],
+        [
+            cargo,
+            "clippy",
+            "--locked",
+            "--offline",
+            "--workspace",
+            "--all-targets",
+            "--",
+            "-D",
+            "warnings",
+        ],
     ]
     environment = dict(os.environ)
     environment.setdefault("CARGO_BUILD_JOBS", "2")
+    executable = shutil.which(cargo)
+    if executable:
+        environment["PATH"] = (
+            str(Path(executable).parent) + os.pathsep + environment.get("PATH", "")
+        )
+    if (ROOT / "bindings/python/Cargo.toml").is_file():
+        commands.append(
+            [
+                sys.executable,
+                str(ROOT / "bindings/python/check.py"),
+                "--uv",
+                uv,
+                "--python",
+                python,
+            ]
+        )
     for command in commands:
         print("+ " + " ".join(command), flush=True)
         subprocess.run(command, cwd=ROOT, env=environment, check=True)
@@ -108,16 +134,18 @@ def check(cargo):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--cargo", default=os.environ.get("CARGO", "cargo"))
+    parser.add_argument("--uv", default=os.environ.get("UV", "uv"))
+    parser.add_argument("--python", default=os.environ.get("KERNEL_PYTHON", "3.12"))
     parser.add_argument("--pre-push", nargs=2, metavar=("REMOTE", "URL"))
     args = parser.parse_args()
     if args.pre_push:
         tips = pushed_code_tips(args.pre_push[0], sys.stdin)
         if not tips:
-            print("Documentation-only push: core checks skipped.")
+            print("Documentation-only push: core and Python checks skipped.")
             return
         check_pushed_tips(tips, args.cargo)
         return
-    check(args.cargo)
+    check(args.cargo, args.uv, args.python)
 
 
 if __name__ == "__main__":

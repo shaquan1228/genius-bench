@@ -2,8 +2,8 @@
 
 1. **Write technical English.** Code, APIs, and documentation should
    read as precise technical English. Use established evaluation terms, explicit
-   names, and named arguments where supported. Prefer `Task.assess(task=...,
-   outcome=...)` to a generic `process(data)`.
+   names, and named arguments where supported. Prefer `task.assess(outcome=...)`
+   to a generic `process(data)`.
 
 2. **Give semantics one owner.** The core owns validation, predicate meaning,
    grading, and required score names. Bindings convert values and calls;

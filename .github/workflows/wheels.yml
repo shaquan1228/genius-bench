@@ -1,0 +1,64 @@
+name: Python wheels
+
+on: [push, pull_request, workflow_dispatch]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            manylinux: "2_28"
+            label: linux-x86_64
+          - os: macos-14
+            target: aarch64-apple-darwin
+            manylinux: "off"
+            label: macos-arm64
+    runs-on: ${{ matrix.os }}
+    env:
+      CARGO_BUILD_JOBS: 2
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: PyO3/maturin-action@v1
+        with:
+          maturin-version: v1.15.0
+          target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux }}
+          args: --manifest-path bindings/python/Cargo.toml --release --locked -i python3.12 --out dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheel-${{ matrix.label }}
+          path: dist/*.whl
+          if-no-files-found: error
+  install:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13", "3.14"]
+        platform:
+          - os: ubuntu-24.04
+            label: linux-x86_64
+          - os: macos-14
+            label: macos-arm64
+    runs-on: ${{ matrix.platform.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.11.11"
+          python-version: ${{ matrix.python }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: wheel-${{ matrix.platform.label }}
+          path: dist
+      - run: uv run --no-project --python "${{ matrix.python }}" python bindings/python/verify_wheel.py --wheel dist/*.whl --python "${{ matrix.python }}"
