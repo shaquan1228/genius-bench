@@ -22,3 +22,6 @@ while preserving grading behavior and runner workflows. Ruby bindings follow
 that integration proof.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the contributor rules.
+
+The [extraction plan](docs/plans/2026-10-22-semantic-kernel-extraction-plan.md)
+defines the deliverables and verification gates.
