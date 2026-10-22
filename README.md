@@ -1,7 +1,7 @@
 # Genius Bench
 
 A shared grading core for evaluation libraries, starting with the
-[Genius eval library](https://github.com/shaquan1228/genius/tree/523d1eede610171d825fde0fee12d418dd1ef981/evals).
+[Genius eval library](https://github.com/shaquan1228/genius).
 Task declarations and observed outcomes produce assessments with named scores
 and supporting evidence.
 
@@ -35,7 +35,7 @@ make install-hooks
 ```
 
 `make check` runs Rust checks and verifies a fresh wheel installation built from
-an extracted source distribution, including shared fixtures and type checks.
+an extracted source distribution, including boundary and type checks.
 
 See the [Python package guide](bindings/python/README.md) for API examples,
 adapters, supported platforms, source identity, and packaging procedures;

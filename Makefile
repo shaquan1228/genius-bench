@@ -1,8 +1,7 @@
-.PHONY: check install-hooks capture-fixtures
+.PHONY: check install-hooks
 
 CARGO ?= cargo
 PYTHON ?= python3
-OCAMLC ?= ocamlc
 UV ?= uv
 KERNEL_PYTHON ?= 3.12
 
@@ -11,6 +10,3 @@ check:
 
 install-hooks:
 	git config core.hooksPath .githooks
-
-capture-fixtures:
-	$(PYTHON) scripts/capture_ocaml.py --source-repo "$(SOURCE_REPO)" --ocamlc "$(OCAMLC)"

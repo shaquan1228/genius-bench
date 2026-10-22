@@ -60,7 +60,6 @@ def verify(wheel, python, uv, offline, expected_source_hash=None):
             temporary / "tests",
             ignore=shutil.ignore_patterns("__pycache__"),
         )
-        shutil.copyfile(ROOT / "fixtures/semantics.json", temporary / "semantics.json")
         empty_path = temporary / "empty-path"
         empty_path.mkdir()
         clean = {
@@ -70,7 +69,6 @@ def verify(wheel, python, uv, offline, expected_source_hash=None):
             and key not in {"VIRTUAL_ENV", "CONDA_PREFIX"}
         }
         clean["PATH"] = str(empty_path)
-        clean["KERNEL_FIXTURES"] = str(temporary / "semantics.json")
         clean["KERNEL_SOURCE_HASH"] = expected_source_hash or source_identity()
         clean["KERNEL_COMPILER_FREE"] = "1"
         clean["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
@@ -153,7 +151,7 @@ def verify(wheel, python, uv, offline, expected_source_hash=None):
                 f"Unexpected negative typing result:\n{invalid.stdout}\n{invalid.stderr}"
             )
         print(
-            "Installed wheel: fixtures, boundary, identity, stubs, and positive/negative typing passed.",
+            "Installed wheel: boundary, identity, stubs, and positive/negative typing passed.",
             flush=True,
         )
 

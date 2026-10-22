@@ -29,11 +29,10 @@
    retain diagnostics, and record which installed grading policy produced a
    result.
 
-7. **Prove parity through public APIs.** Before replacing existing behavior,
-   capture expected results from the existing grader. Replay them through the
-   core and each binding, including invalid declarations and conversion edge
-   cases. Use Genius as the first integration proof. Test packaged installations
-   outside the source checkout.
+7. **Verify public APIs.** Test semantic operations, validation, conversion,
+   projections, and failure paths through the core and each binding. Use Genius
+   as the first integration proof. Test packaged installations outside the
+   source checkout.
 
 8. **Keep changes focused and verifiable.** State the behavior changed and the
    checks run. Add tests for meaningful behavior and failure paths. Document

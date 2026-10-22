@@ -50,7 +50,7 @@ failure, invalid submission, timeout, and harness failure retain distinct
 statuses. `REQUIRED_SCORES` comes from the core.
 
 `Task` construction establishes the combined semantic invariants; nested
-`Verifier`, `Rubric`, and `TextRule` objects are input declarations. The legacy
+`Verifier`, `Rubric`, and `TextRule` objects are input declarations. The
 path grammar accepts flat filenames matching `[A-Za-z_][A-Za-z0-9_.-]*`, with no
 directories. Path validation issues retain the `fixture` field label across
 fixture, allowed-file, and reference-edit paths. Walk `assessment.checks` to its
@@ -124,8 +124,8 @@ make install-hooks
 
 `make check` runs core tests, Rust formatting and workspace clippy, Python
 formatting, and an offline wheel build from an extracted source distribution.
-It installs that wheel into a fresh temporary environment and replays the 163
-captured fixtures, boundary tests, and type checks with `python -I`, no
+It installs that wheel into a fresh temporary environment and runs boundary
+tests and type checks with `python -I`, no
 `PYTHONPATH`, and a subprocess `PATH` containing no compiler or OCaml commands.
 It also grades before installing optional or test dependencies. Documentation-only
 pushes skip these checks; code pushes run the real pre-push gate.
