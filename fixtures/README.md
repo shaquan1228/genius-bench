@@ -5,8 +5,8 @@ Genius revision `523d1eede610171d825fde0fee12d418dd1ef981`. Before the Rust
 implementation, both original OCaml tests passed with
 `make -C /Users/me/Repositories/genius/evals test-ocaml`. A Rust fixture replay
 then failed on `record-order`: derived Rust equality returned false while the
-captured OCaml result was true. The completed port replays the entire corpus
-through public Rust APIs.
+captured OCaml result was true. The Rust core replays the entire corpus through
+public APIs, with the explicit consumer-field differences below.
 
 Reproduce the capture with Python 3 and OCaml 4.13 or later:
 
@@ -37,11 +37,21 @@ fixtures retain predicates, observations, observed leaf values, pass decisions,
 and scores. Projection fixtures include public tool contents while omitting
 private verifier files, commands, stdin, and reference material.
 
-The port retains `Instruction.skill`, its validation, and `Case.skill` for this
-baseline. Their removal belongs to the next dependent layer. `Experiment`,
-`Profile`, and the default Genius profile are consumer settings; they are not
-part of grading and are deliberately absent. The legacy Experiment assertions
-still ran in the original tests, but no Experiment fixture or Rust API is added.
+The captured corpus retains the legacy `Instruction.skill`, its validation, and
+`Case.skill` unchanged. The generic Rust contract removes that consumer field.
+Replay reads only the instruction prompt and removes only `skill` from captured
+public-case expectations. The `invalid-skill` declaration now succeeds: replay
+first proves its inputs equal the captured `code` declaration after removing
+the two skill values, then uses that declaration's captured projection, checks,
+and condition. The `combined-issues` case removes exactly its captured
+`instruction.skill` issue and still checks all ten generic validation issues in
+order. Every fixture category and all 163 cases run; no grading or predicate
+expectation changes.
+
+`Experiment`, `Profile`, consumer labels, and the default Genius profile are
+consumer settings and remain absent from the core. The legacy Experiment
+assertions still ran in the original tests, but no Experiment fixture or Rust
+API is added.
 
 # Rust API
 
@@ -59,7 +69,8 @@ and expose immutable getters for each field. Input records (`File`, `Instruction
 task borrows cannot mutate those stored records. `Criterion` has `Code`, `Answer`,
 and `State` alternatives and compiles to a predicate with `condition()`.
 
-`Task::project` copies only candidate material into `Case`.
+`Instruction` contains only `prompt`; `Case` contains only `case_id`, `prompt`,
+and `files`. `Task::project` copies only candidate material into `Case`.
 `Task::{assess,grade}` return `Result` with a distinct `GradingFailure` for harness
 faults. Required score names are `REQUIRED_SCORES`: correctness and scope, in order.
 `Task::checks` gives the trusted harness immutable access to private verification

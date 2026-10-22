@@ -228,7 +228,6 @@ fn task(input: &Json) -> Result<Task, ValidationFailure> {
         string(&input["id"]),
         files(&input["fixture"]),
         Instruction {
-            skill: string(&input["instruction"]["skill"]),
             prompt: string(&input["instruction"]["prompt"]),
         },
         criterion(&input["criterion"]),
@@ -266,7 +265,7 @@ fn render_validation(input: &ValidationFailure) -> Json {
 }
 
 fn render_case(input: &Case) -> Json {
-    json!({"case_id": input.case_id, "skill": input.skill, "prompt": input.prompt, "files": render_files(&input.files)})
+    json!({"case_id": input.case_id, "prompt": input.prompt, "files": render_files(&input.files)})
 }
 
 #[test]
@@ -281,6 +280,52 @@ fn captured_legacy_semantics() {
     assert_eq!(cases.len(), 163);
     for case in cases {
         let input = &case["input"];
+        let mut expected = case["expected"].clone();
+        if case["category"] == "task" {
+            match case["id"].as_str().unwrap() {
+                "invalid-skill" => {
+                    let baseline = cases
+                        .iter()
+                        .find(|item| item["category"] == "task" && item["id"] == "code")
+                        .unwrap();
+                    let mut generic_input = input.clone();
+                    assert_eq!(
+                        generic_input["instruction"]
+                            .as_object_mut()
+                            .unwrap()
+                            .remove("skill"),
+                        Some(json!("bad_skill"))
+                    );
+                    let mut baseline_input = baseline["input"].clone();
+                    assert_eq!(
+                        baseline_input["instruction"]
+                            .as_object_mut()
+                            .unwrap()
+                            .remove("skill"),
+                        Some(json!("reasoning"))
+                    );
+                    assert_eq!(generic_input, baseline_input);
+                    expected = baseline["expected"].clone();
+                }
+                "combined-issues" => {
+                    let removed = expected["failure"]["issues"]
+                        .as_array_mut()
+                        .unwrap()
+                        .remove(1);
+                    assert_eq!(
+                        removed,
+                        json!({"field": "instruction.skill", "message": "Invalid instruction skill"})
+                    );
+                }
+                _ => {}
+            }
+            if let Some(projected) = expected.get_mut("case") {
+                assert_eq!(
+                    projected.as_object_mut().unwrap().remove("skill"),
+                    Some(json!("reasoning"))
+                );
+            }
+        }
         let actual = match case["category"].as_str().unwrap() {
             "equal" => json!(value(&input["left"]).equal(&value(&input["right"]))),
             "get" => json!(
@@ -319,6 +364,6 @@ fn captured_legacy_semantics() {
             }
             other => panic!("unknown category: {other}"),
         };
-        assert_eq!(actual, case["expected"], "fixture {}", case["id"]);
+        assert_eq!(actual, expected, "fixture {}", case["id"]);
     }
 }

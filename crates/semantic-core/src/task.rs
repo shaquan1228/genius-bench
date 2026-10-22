@@ -34,7 +34,6 @@ pub struct File {
 https://huggingface.co/docs/lighteval/main/en/package_reference/doc */
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Instruction {
-    pub skill: String,
     pub prompt: String,
 }
 
@@ -128,7 +127,6 @@ pub struct Reference {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Case {
     pub case_id: String,
-    pub skill: String,
     pub prompt: String,
     pub files: Vec<File>,
 }
@@ -158,11 +156,6 @@ impl Task {
             }
         };
         require(support::valid_name(&id), "id", "Invalid case identity");
-        require(
-            support::valid_name(&instruction.skill),
-            "instruction.skill",
-            "Invalid instruction skill",
-        );
         require(
             fixture_paths
                 .iter()
@@ -311,7 +304,6 @@ impl Task {
         }
         Case {
             case_id: self.id.clone(),
-            skill: self.instruction.skill.clone(),
             prompt: self.instruction.prompt.clone(),
             files,
         }
