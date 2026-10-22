@@ -1,0 +1,18 @@
+# frozen_string_literal: true
+
+require "rspec/core/rake_task"
+require "rb_sys/extensiontask"
+
+ROOT = File.expand_path("../..", __dir__)
+
+GEMSPEC = Gem::Specification.load("genius-bench-kernel.gemspec")
+
+RbSys::ExtensionTask.new("semantic-ruby", GEMSPEC) do |ext|
+  ext.lib_dir = "lib/genius_bench"
+  ext.cross_compile = true
+  ext.cross_platform = %w[arm64-darwin x86_64-linux]
+end
+
+RSpec::Core::RakeTask.new(:spec)
+
+task default: %i[compile spec]

@@ -1,0 +1,3 @@
+[workspace]
+members = ["ext/semantic_ruby"]
+resolver = "3"

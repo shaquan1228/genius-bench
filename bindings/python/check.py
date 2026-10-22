@@ -46,6 +46,7 @@ def main():
             "--check",
             "scripts/check.py",
             str(PACKAGE),
+            str(ROOT / "bindings/ruby"),
         ]
     )
     with tempfile.TemporaryDirectory(prefix="kernel-source-") as directory:

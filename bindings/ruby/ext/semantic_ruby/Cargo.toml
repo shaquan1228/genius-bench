@@ -1,0 +1,15 @@
+[package]
+name = "semantic-ruby"
+description = "Native Ruby boundary for semantic-core"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+repository = "https://github.com/shaquan1228/genius-bench"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+semantic-core = { path = "../../../../crates/semantic-core" }
+magnus = { version = "=0.9.3", features = ["rb-sys"] }

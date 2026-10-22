@@ -47,3 +47,11 @@
     comments that cite sources for semantic definitions, translating their
     comment syntax when porting. Put other explanations in documentation,
     commits, or PRs. Interpreter directives and language attributes remain valid.
+
+11. **Write Ruby specs the Better Specs way.** Follow
+    [betterspecs.org](https://www.betterspecs.org/): describe `.class_methods`
+    and `#instance_methods`, start contexts with "when", "with", or "without",
+    keep descriptions short and in the present tense without "should", use
+    `expect` syntax with `subject` and `let`, keep isolated examples to one
+    expectation, cover valid, edge, and invalid inputs, prefer readable
+    matchers, and mock sparingly.

@@ -1,4 +1,4 @@
-name: Core and Python checks
+name: Core and binding checks
 
 on: [push, pull_request]
 
@@ -17,7 +17,13 @@ jobs:
         with:
           version: "0.11.11"
           python-version: "3.12"
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+          working-directory: bindings/ruby
       - run: rustup show active-toolchain
       - run: cargo fetch --locked
+      - run: cargo fetch --locked --manifest-path bindings/ruby/Cargo.toml
       - run: uv sync --project bindings/python --locked --no-install-project --python 3.12
       - run: make check
