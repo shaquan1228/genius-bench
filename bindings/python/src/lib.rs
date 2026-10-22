@@ -129,7 +129,7 @@ impl Value {
         self.0.get(&path).cloned().map(Self)
     }
     #[pyo3(signature = (*, other))]
-    fn equal(&self, other: Self) -> bool {
+    fn equal(&self, other: PyRef<'_, Self>) -> bool {
         self.0.equal(&other.0)
     }
 }
@@ -238,7 +238,7 @@ impl Predicate {
         })
     }
     #[pyo3(signature = (*, observation))]
-    fn holds(&self, observation: Value) -> bool {
+    fn holds(&self, observation: PyRef<'_, Value>) -> bool {
         self.0.holds(&observation.0)
     }
     #[getter]
@@ -829,14 +829,14 @@ impl Task {
         self.0.checks().cloned().map(Verifier)
     }
     #[pyo3(signature = (*, outcome))]
-    fn assess(&self, py: Python<'_>, outcome: Outcome) -> PyResult<Assessment> {
+    fn assess(&self, py: Python<'_>, outcome: PyRef<'_, Outcome>) -> PyResult<Assessment> {
         self.0
             .assess(&outcome.0)
             .map(Assessment)
             .map_err(|failure| grading_error(py, failure))
     }
     #[pyo3(signature = (*, outcome))]
-    fn grade(&self, py: Python<'_>, outcome: Outcome) -> PyResult<Py<PyTuple>> {
+    fn grade(&self, py: Python<'_>, outcome: PyRef<'_, Outcome>) -> PyResult<Py<PyTuple>> {
         tuple(
             py,
             self.0
