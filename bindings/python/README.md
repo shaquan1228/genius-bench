@@ -49,13 +49,27 @@ validation issues. `GradingError` derives from `RuntimeError` and retains the
 failure, invalid submission, timeout, and harness failure retain distinct
 statuses. `REQUIRED_SCORES` comes from the core.
 
+`Task` construction establishes the combined semantic invariants; nested
+`Verifier`, `Rubric`, and `TextRule` objects are input declarations. The legacy
+path grammar accepts flat filenames matching `[A-Za-z_][A-Za-z0-9_.-]*`, with no
+directories. Path validation issues retain the `fixture` field label across
+fixture, allowed-file, and reference-edit paths. Walk `assessment.checks` to its
+leaves and call `observed()` to inspect the values behind failed checks.
+
 `Value.from_python(value=...)` is the explicit host-value boundary. It accepts
 null, booleans, signed i64 integers, floats, strings, lists, tuples, string-keyed
 dictionaries, native values, and objects implementing `__kernel_value__()`.
 `KernelValue` describes that protocol. Booleans, integers, and floats remain
-distinct. Integer overflow, unsupported objects, cycles, and nesting beyond
-256 conversion levels raise exceptions. Non-finite floats retain core equality
-semantics, including NaN being unequal to itself.
+distinct. Each dictionary, list, tuple, or `Record` field sequence snapshots its
+members before converting children, so child hooks cannot change that traversal;
+native list and tuple snapshots bypass overridden iterators. Integer overflow,
+unsupported objects, cycles, and nesting beyond 256 conversion levels raise
+exceptions. Native values retain the same limit of 256 nested lists or records,
+and predicate composition allows 256 predicate levels along each path, without
+limiting breadth. `Outcome` and `Task` construction reserve the levels added by
+their observation and grading wrappers. Reusing native values and predicates,
+including values exposed by assessments, cannot bypass these bounds. Non-finite
+floats retain core equality semantics, including NaN being unequal to itself.
 
 Use `Record(fields=[("name", first), ("name", second)])` to retain duplicate
 field names. `Value.equal(other=...)` and `Value.get(path=...)` use the core's

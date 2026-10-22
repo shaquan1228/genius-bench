@@ -11,12 +11,74 @@ fn tuple<'py, T: IntoPyObject<'py>>(py: Python<'py>, items: Vec<T>) -> PyResult<
     Ok(PyTuple::new(py, items)?.unbind())
 }
 
-fn convert(value: &Bound<'_, PyAny>, active: &mut HashSet<usize>) -> PyResult<core::Value> {
-    if let Ok(value) = value.extract::<Value>() {
-        return Ok(value.0);
+fn check_depth(depth: usize, kind: &str) -> PyResult<()> {
+    if depth > 256 {
+        Err(PyValueError::new_err(format!(
+            "{kind} nesting exceeds 256 levels"
+        )))
+    } else {
+        Ok(())
     }
-    if let Ok(record) = value.extract::<Record>() {
-        return Ok(core::Value::Record(record.0));
+}
+
+fn check_value_depth(value: &core::Value, depth: usize) -> PyResult<()> {
+    let mut pending = vec![(value, depth)];
+    while let Some((value, depth)) = pending.pop() {
+        match value {
+            core::Value::List(items) => {
+                check_depth(depth + 1, "Kernel value")?;
+                pending.extend(items.iter().map(|item| (item, depth + 1)));
+            }
+            core::Value::Record(fields) => {
+                check_depth(depth + 1, "Kernel value")?;
+                pending.extend(fields.iter().map(|(_, item)| (item, depth + 1)));
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+fn check_predicate_depth(predicate: &core::Predicate, depth: usize) -> PyResult<()> {
+    let mut pending = vec![(predicate, depth)];
+    while let Some((predicate, depth)) = pending.pop() {
+        check_depth(depth + 1, "Predicate")?;
+        match predicate {
+            core::Predicate::All { checks } | core::Predicate::Any { checks } => {
+                pending.extend(checks.iter().map(|(_, check)| (check, depth + 1)));
+            }
+            core::Predicate::Not { check } => pending.push((check, depth + 1)),
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+fn sequence_snapshot<'py>(value: &Bound<'py, PyAny>) -> PyResult<Vec<Bound<'py, PyAny>>> {
+    if let Ok(items) = value.cast::<PyList>() {
+        Ok(items.to_tuple().iter().collect())
+    } else if let Ok(items) = value.cast::<PyTuple>() {
+        Ok(items.iter().collect())
+    } else {
+        value.try_iter()?.collect()
+    }
+}
+
+fn convert(
+    value: &Bound<'_, PyAny>,
+    active: &mut HashSet<usize>,
+    depth: usize,
+) -> PyResult<core::Value> {
+    if let Ok(value) = value.extract::<PyRef<'_, Value>>() {
+        check_value_depth(&value.0, depth)?;
+        return Ok(value.0.clone());
+    }
+    if let Ok(record) = value.extract::<PyRef<'_, Record>>() {
+        check_depth(depth + 1, "Kernel value")?;
+        for (_, item) in &record.0 {
+            check_value_depth(item, depth + 1)?;
+        }
+        return Ok(core::Value::Record(record.0.clone()));
     }
     if value.is_none() {
         return Ok(core::Value::Null);
@@ -37,26 +99,29 @@ fn convert(value: &Bound<'_, PyAny>, active: &mut HashSet<usize>) -> PyResult<co
     if !active.insert(address) {
         return Err(PyValueError::new_err("Cyclic kernel value"));
     }
-    if active.len() > 256 {
-        return Err(PyValueError::new_err(
-            "Kernel value nesting exceeds 256 levels",
-        ));
-    }
+    check_depth(depth + 1, "Kernel value")?;
     let result = if let Ok(mapping) = value.cast::<PyDict>() {
         mapping
             .iter()
-            .map(|(name, item)| Ok((name.extract::<String>()?, convert(&item, active)?)))
+            .collect::<Vec<_>>()
+            .into_iter()
+            .map(|(name, item)| {
+                Ok((
+                    name.extract::<String>()?,
+                    convert(&item, active, depth + 1)?,
+                ))
+            })
             .collect::<PyResult<Vec<_>>>()
             .map(core::Value::Record)
     } else if value.is_instance_of::<PyList>() || value.is_instance_of::<PyTuple>() {
-        value
-            .try_iter()?
-            .map(|item| convert(&item?, active))
+        sequence_snapshot(value)?
+            .into_iter()
+            .map(|item| convert(&item, active, depth + 1))
             .collect::<PyResult<Vec<_>>>()
             .map(core::Value::List)
     } else {
         match value.getattr("__kernel_value__") {
-            Ok(method) => convert(&method.call0()?, active),
+            Ok(method) => convert(&method.call0()?, active, depth + 1),
             Err(error) if error.is_instance_of::<PyAttributeError>(value.py()) => {
                 Err(PyTypeError::new_err(format!(
                     "Unsupported kernel value: {}",
@@ -79,7 +144,7 @@ impl Value {
     #[staticmethod]
     #[pyo3(signature = (*, value))]
     fn from_python(value: &Bound<'_, PyAny>) -> PyResult<Self> {
-        Ok(Self(convert(value, &mut HashSet::new())?))
+        Ok(Self(convert(value, &mut HashSet::new(), 0)?))
     }
     #[getter]
     fn kind(&self) -> &'static str {
@@ -144,13 +209,15 @@ impl Record {
     #[pyo3(signature = (*, fields))]
     fn new(fields: &Bound<'_, PyAny>) -> PyResult<Self> {
         let mut active = HashSet::new();
-        let fields = fields
-            .try_iter()?
+        let fields = sequence_snapshot(fields)?
+            .into_iter()
             .map(|pair| {
-                let pair = pair?;
                 let (name, item): (String, Bound<'_, PyAny>) = pair.extract()?;
-                Ok((name, convert(&item, &mut active)?))
+                Ok((name, item))
             })
+            .collect::<PyResult<Vec<_>>>()?
+            .into_iter()
+            .map(|(name, item)| Ok((name, convert(&item, &mut active, 1)?)))
             .collect::<PyResult<_>>()?;
         Ok(Self(fields))
     }
@@ -212,30 +279,37 @@ impl Predicate {
     }
     #[staticmethod]
     #[pyo3(signature = (*, checks))]
-    fn all(checks: Vec<(String, Self)>) -> Self {
-        Self(core::Predicate::All {
+    fn all(checks: Vec<(String, Self)>) -> PyResult<Self> {
+        for (_, check) in &checks {
+            check_predicate_depth(&check.0, 1)?;
+        }
+        Ok(Self(core::Predicate::All {
             checks: checks
                 .into_iter()
                 .map(|(name, check)| (name, check.0))
                 .collect(),
-        })
+        }))
     }
     #[staticmethod]
     #[pyo3(signature = (*, checks))]
-    fn any(checks: Vec<(String, Self)>) -> Self {
-        Self(core::Predicate::Any {
+    fn any(checks: Vec<(String, Self)>) -> PyResult<Self> {
+        for (_, check) in &checks {
+            check_predicate_depth(&check.0, 1)?;
+        }
+        Ok(Self(core::Predicate::Any {
             checks: checks
                 .into_iter()
                 .map(|(name, check)| (name, check.0))
                 .collect(),
-        })
+        }))
     }
     #[staticmethod]
     #[pyo3(signature = (*, check))]
-    fn not_(check: Self) -> Self {
-        Self(core::Predicate::Not {
+    fn not_(check: Self) -> PyResult<Self> {
+        check_predicate_depth(&check.0, 1)?;
+        Ok(Self(core::Predicate::Not {
             check: Box::new(check.0),
-        })
+        }))
     }
     #[pyo3(signature = (*, observation))]
     fn holds(&self, observation: PyRef<'_, Value>) -> bool {
@@ -378,8 +452,12 @@ impl Outcome {
         verification: Verification,
         response: Value,
         facts: Vec<(String, Value)>,
-    ) -> Self {
-        Self(core::Outcome {
+    ) -> PyResult<Self> {
+        check_value_depth(&response.0, 1)?;
+        for (_, value) in &facts {
+            check_value_depth(&value.0, 1)?;
+        }
+        Ok(Self(core::Outcome {
             changed_files,
             verification: verification.0,
             response: response.0,
@@ -387,7 +465,7 @@ impl Outcome {
                 .into_iter()
                 .map(|(name, value)| (name, value.0))
                 .collect(),
-        })
+        }))
     }
     #[getter]
     fn changed_files(&self, py: Python<'_>) -> PyResult<Py<PyTuple>> {
@@ -787,6 +865,9 @@ impl Task {
         reference: Reference,
         py: Python<'_>,
     ) -> PyResult<Self> {
+        if let core::Criterion::State { predicate } = &criterion.0 {
+            check_predicate_depth(predicate, 1)?;
+        }
         core::Task::new(
             id,
             fixture.into_iter().map(|file| file.0).collect(),

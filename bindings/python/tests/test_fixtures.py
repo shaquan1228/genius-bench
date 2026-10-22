@@ -50,10 +50,24 @@ def render_value(item):
         result["value"] = str(item.scalar)
     elif kind == "float":
         scalar = item.scalar
-        result["value"] = "nan" if math.isnan(scalar) else format(scalar, ".15g")
+        result["value"] = "nan" if math.isnan(scalar) else format(scalar, ".17g")
     elif kind != "null":
         result["value"] = item.scalar
     return result
+
+
+@pytest.mark.parametrize(
+    ("number", "expected"),
+    [
+        (0.1, "0.10000000000000001"),
+        (math.nextafter(0.1, math.inf), "0.10000000000000002"),
+    ],
+)
+def test_float_renderer_precision(number, expected):
+    assert render_value(k.Value.from_python(value=number)) == {
+        "type": "float",
+        "value": expected,
+    }
 
 
 def predicate(data):

@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 import importlib.util
 from pathlib import Path
+import struct
 import sys
 
 import pytest
@@ -102,8 +103,20 @@ def test_values_protocol_records_and_failures():
     assert not k.Value.from_python(value=True).equal(other=k.Value.from_python(value=1))
     assert not k.Value.from_python(value=1).equal(other=k.Value.from_python(value=1.0))
     assert k.Value.from_python(value=Custom()).get(path=["answer"]).scalar == 42
-    for number in (-(2**63), 2**63 - 1):
-        assert k.Value.from_python(value=number).scalar == number
+    for number in (-(2**63), -(2**53) - 1, 2**53 - 1, 2**53, 2**53 + 1, 2**63 - 1):
+        scalar = k.Value.from_python(value=number).scalar
+        assert type(scalar) is int
+        assert scalar == number
+    for bits in (
+        0x3FB999999999999A,
+        0x3FB999999999999B,
+        0x4340000000000000,
+        0x4340000000000001,
+    ):
+        number = struct.unpack(">d", bits.to_bytes(8, "big"))[0]
+        scalar = k.Value.from_python(value=number).scalar
+        assert type(scalar) is float
+        assert struct.pack(">d", scalar) == bits.to_bytes(8, "big")
     for number in (-(2**63) - 1, 2**63):
         with pytest.raises(OverflowError):
             k.Value.from_python(value=number)
@@ -117,6 +130,55 @@ def test_values_protocol_records_and_failures():
             k.Value.from_python(value=unsupported)
     with pytest.raises(TypeError):
         k.Value.from_python(1)
+
+
+@pytest.mark.parametrize("container", ["dict-add", "dict-remove", "list", "record"])
+def test_conversion_snapshots_before_callbacks(container):
+    class Mutating:
+        def __kernel_value__(self):
+            if container == "dict-add":
+                source["added"] = 3
+            elif container == "dict-remove":
+                source.pop("tail")
+            elif container == "list":
+                source.append(3)
+            else:
+                source.append(("added", 3))
+                source[1] = ("replaced", 4)
+            return 1
+
+    if container.startswith("dict"):
+        source = {"hook": Mutating(), "tail": 2}
+        converted = k.Value.from_python(value=source)
+    elif container == "list":
+        source = [Mutating(), 2]
+        converted = k.Value.from_python(value=source)
+        assert [item.scalar for item in converted.items] == [1, 2]
+        return
+    else:
+        source = [("hook", Mutating()), ("tail", 2)]
+        converted = k.Value.from_python(value=k.Record(fields=source))
+    assert [(name, item.scalar) for name, item in converted.fields] == [
+        ("hook", 1),
+        ("tail", 2),
+    ]
+
+
+def test_native_sequence_snapshots_ignore_overridden_iterators():
+    class List(list):
+        def __iter__(self):
+            raise AssertionError("Overridden list iterator")
+
+    class Tuple(tuple):
+        def __iter__(self):
+            raise AssertionError("Overridden tuple iterator")
+
+    for source in (List([1, 2]), Tuple((1, 2))):
+        assert [item.scalar for item in k.Value.from_python(value=source).items] == [
+            1,
+            2,
+        ]
+    assert k.Record(fields=List([("x", 1)])).fields[0][1].scalar == 1
 
 
 def test_native_validation_and_harness_failures():
@@ -257,3 +319,85 @@ def test_nested_adapters_and_bounded_conversion():
     fields[0][1].append(2)
     assert isinstance(record.fields, tuple)
     assert len(record.fields[0][1].items) == 1
+
+
+@pytest.mark.parametrize("container", ["value", "record"])
+def test_bounded_native_value_composition(container):
+    nested = k.Value.from_python(value=None)
+    for _ in range(256):
+        nested = (
+            k.Value.from_python(value=[nested])
+            if container == "value"
+            else k.Record(fields=[("x", nested)])
+        )
+    with pytest.raises(ValueError, match="nesting"):
+        if container == "value":
+            k.Value.from_python(value=[nested])
+        else:
+            k.Record(fields=[("x", nested)])
+    converted = k.Value.from_python(value=nested)
+    assert converted.kind == ("list" if container == "value" else "record")
+
+
+@pytest.mark.parametrize("operator", ["not_", "all", "any"])
+def test_bounded_native_predicate_composition(operator):
+    if operator != "not_":
+        wide = getattr(k.Predicate, operator)(
+            checks=[(str(index), k.Predicate.present(path=[])) for index in range(300)]
+        )
+        assert len(wide.checks) == 300
+        assert wide.holds(observation=k.Value.from_python(value=1))
+    predicate = k.Predicate.present(path=[])
+    for _ in range(255):
+        predicate = (
+            k.Predicate.not_(check=predicate)
+            if operator == "not_"
+            else getattr(k.Predicate, operator)(checks=[("x", predicate)])
+        )
+    with pytest.raises(ValueError, match="nesting"):
+        if operator == "not_":
+            k.Predicate.not_(check=predicate)
+        else:
+            getattr(k.Predicate, operator)(checks=[("x", predicate)])
+    assert k.Assessment(
+        predicate=predicate, observation=k.Value.from_python(value=1)
+    ).passed() is (operator != "not_")
+
+
+def test_bounded_generated_observations_and_task_checks():
+    nested = k.Value.from_python(value=None)
+    for _ in range(255):
+        nested = k.Value.from_python(value=[nested])
+    outcome = k.Outcome(
+        changed_files=[],
+        verification=k.Verification.unchecked(),
+        response=nested,
+        facts=[("fact", nested)],
+    )
+    observation = outcome.observation()
+    assessment = k.Assessment(
+        predicate=k.Predicate.present(path=[]), observation=observation
+    )
+    for exposed in (observation, assessment.observation, assessment.observed()):
+        with pytest.raises(ValueError, match="nesting"):
+            k.Value.from_python(value=[exposed])
+    for response, facts in ((observation, []), (nested, [("fact", observation)])):
+        with pytest.raises(ValueError, match="nesting"):
+            k.Outcome(
+                changed_files=[],
+                verification=k.Verification.unchecked(),
+                response=response,
+                facts=facts,
+            )
+    predicate = k.Predicate.present(path=[])
+    for _ in range(255):
+        predicate = k.Predicate.not_(check=predicate)
+    with pytest.raises(ValueError, match="nesting"):
+        k.Task(
+            id="deep",
+            fixture=[],
+            instruction=k.Instruction(prompt="observe"),
+            criterion=k.Criterion.state(predicate=predicate),
+            allowed_files=[],
+            reference=k.Reference(edits=[], completion=k.Value.from_python(value=None)),
+        )
