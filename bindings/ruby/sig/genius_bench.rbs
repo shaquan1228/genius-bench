@@ -111,8 +111,8 @@ module GeniusBench
     def inspect: () -> String
   end
 
-  class File
-    def self.new: (path: String, contents: String) -> File
+  class SourceFile
+    def self.new: (path: String, contents: String) -> SourceFile
     def path: () -> String
     def contents: () -> String
     def ==: (untyped other) -> bool
@@ -131,10 +131,10 @@ module GeniusBench
   end
 
   class Verifier
-    def self.new: (inputs: Array[String], files: Array[File], tools: Array[File], command: Array[String], stdin: String, timeout_seconds: Integer) -> Verifier
+    def self.new: (inputs: Array[String], files: Array[SourceFile], tools: Array[SourceFile], command: Array[String], stdin: String, timeout_seconds: Integer) -> Verifier
     def inputs: () -> Array[String]
-    def files: () -> Array[File]
-    def tools: () -> Array[File]
+    def files: () -> Array[SourceFile]
+    def tools: () -> Array[SourceFile]
     def command: () -> Array[String]
     def stdin: () -> String
     def timeout_seconds: () -> Integer
@@ -181,8 +181,8 @@ module GeniusBench
   end
 
   class Reference
-    def self.new: (edits: Array[File], completion: Value) -> Reference
-    def edits: () -> Array[File]
+    def self.new: (edits: Array[SourceFile], completion: Value) -> Reference
+    def edits: () -> Array[SourceFile]
     def completion: () -> Value
     def ==: (untyped other) -> bool
     def eql?: (untyped other) -> bool
@@ -193,7 +193,7 @@ module GeniusBench
   class Case
     def case_id: () -> String
     def prompt: () -> String
-    def files: () -> Array[File]
+    def files: () -> Array[SourceFile]
     def ==: (untyped other) -> bool
     def eql?: (untyped other) -> bool
     def hash: () -> Integer
@@ -220,9 +220,9 @@ module GeniusBench
   end
 
   class Task
-    def self.new: (id: String, fixture: Array[File], instruction: Instruction, criterion: Criterion, allowed_files: Array[String], reference: Reference) -> Task
+    def self.new: (id: String, fixture: Array[SourceFile], instruction: Instruction, criterion: Criterion, allowed_files: Array[String], reference: Reference) -> Task
     def id: () -> String
-    def fixture: () -> Array[File]
+    def fixture: () -> Array[SourceFile]
     def instruction: () -> Instruction
     def criterion: () -> Criterion
     def allowed_files: () -> Array[String]

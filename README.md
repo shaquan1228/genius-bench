@@ -68,7 +68,7 @@ are distinct after symbol conversion, native values, and objects responding to
 inputs are strict: integers and strings are not coerced through `to_int` or
 `to_str`. Kinds, statuses, and failure names are frozen strings, as in Python.
 `Value#equal_to?(other:)` is semantic equality; Ruby's `equal?` keeps its
-identity meaning. `GeniusBench::File` shadows `::File` inside the namespace.
+identity meaning.
 Platform gems built by `rake native gem` install and grade without Rust; the
 source gem built by `rake gem:source` vendors the semantic core and requires
 Rust, libclang, and rb_sys at install time. `GeniusBench.version` and `GeniusBench.source_hash` report

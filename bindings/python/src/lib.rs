@@ -529,10 +529,10 @@ impl Assessment {
 
 #[pyclass(module = "kernel._native", frozen, from_py_object)]
 #[derive(Clone)]
-struct File(core::File);
+struct SourceFile(core::File);
 
 #[pymethods]
-impl File {
+impl SourceFile {
     #[new]
     #[pyo3(signature = (*, path, contents))]
     fn new(path: String, contents: String) -> Self {
@@ -575,8 +575,8 @@ impl Verifier {
     #[pyo3(signature = (*, inputs, files, tools, command, stdin, timeout_seconds))]
     fn new(
         inputs: Vec<String>,
-        files: Vec<File>,
-        tools: Vec<File>,
+        files: Vec<SourceFile>,
+        tools: Vec<SourceFile>,
         command: Vec<String>,
         stdin: String,
         timeout_seconds: i64,
@@ -596,11 +596,11 @@ impl Verifier {
     }
     #[getter]
     fn files(&self, py: Python<'_>) -> PyResult<Py<PyTuple>> {
-        tuple(py, self.0.files.iter().cloned().map(File).collect())
+        tuple(py, self.0.files.iter().cloned().map(SourceFile).collect())
     }
     #[getter]
     fn tools(&self, py: Python<'_>) -> PyResult<Py<PyTuple>> {
-        tuple(py, self.0.tools.iter().cloned().map(File).collect())
+        tuple(py, self.0.tools.iter().cloned().map(SourceFile).collect())
     }
     #[getter]
     fn command(&self, py: Python<'_>) -> PyResult<Py<PyTuple>> {
@@ -746,7 +746,7 @@ struct Reference(core::Reference);
 impl Reference {
     #[new]
     #[pyo3(signature = (*, edits, completion))]
-    fn new(edits: Vec<File>, completion: Value) -> Self {
+    fn new(edits: Vec<SourceFile>, completion: Value) -> Self {
         Self(core::Reference {
             edits: edits.into_iter().map(|file| file.0).collect(),
             completion: completion.0,
@@ -754,7 +754,7 @@ impl Reference {
     }
     #[getter]
     fn edits(&self, py: Python<'_>) -> PyResult<Py<PyTuple>> {
-        tuple(py, self.0.edits.iter().cloned().map(File).collect())
+        tuple(py, self.0.edits.iter().cloned().map(SourceFile).collect())
     }
     #[getter]
     fn completion(&self) -> Value {
@@ -778,7 +778,7 @@ impl Case {
     }
     #[getter]
     fn files(&self, py: Python<'_>) -> PyResult<Py<PyTuple>> {
-        tuple(py, self.0.files.iter().cloned().map(File).collect())
+        tuple(py, self.0.files.iter().cloned().map(SourceFile).collect())
     }
 }
 
@@ -833,7 +833,7 @@ impl Task {
     #[pyo3(signature = (*, id, fixture, instruction, criterion, allowed_files, reference))]
     fn new(
         id: String,
-        fixture: Vec<File>,
+        fixture: Vec<SourceFile>,
         instruction: Instruction,
         criterion: Criterion,
         allowed_files: Vec<String>,
@@ -860,7 +860,10 @@ impl Task {
     }
     #[getter]
     fn fixture(&self, py: Python<'_>) -> PyResult<Py<PyTuple>> {
-        tuple(py, self.0.fixture().iter().cloned().map(File).collect())
+        tuple(
+            py,
+            self.0.fixture().iter().cloned().map(SourceFile).collect(),
+        )
     }
     #[getter]
     fn instruction(&self) -> Instruction {
@@ -920,7 +923,7 @@ fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<Verification>()?;
     module.add_class::<Outcome>()?;
     module.add_class::<Assessment>()?;
-    module.add_class::<File>()?;
+    module.add_class::<SourceFile>()?;
     module.add_class::<Instruction>()?;
     module.add_class::<Verifier>()?;
     module.add_class::<TextRule>()?;

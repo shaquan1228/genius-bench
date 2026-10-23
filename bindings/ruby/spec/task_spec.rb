@@ -14,12 +14,12 @@ RSpec.describe GeniusBench::Task do
     end
 
     let(:paths) { ["a.txt"] }
-    let(:fixture) { [GeniusBench::File.new(path: "a.txt", contents: "original")] }
-    let(:tools) { [GeniusBench::File.new(path: "tool", contents: "public")] }
+    let(:fixture) { [GeniusBench::SourceFile.new(path: "a.txt", contents: "original")] }
+    let(:tools) { [GeniusBench::SourceFile.new(path: "tool", contents: "public")] }
     let(:verifier) do
       GeniusBench::Verifier.new(
         inputs: paths,
-        files: [GeniusBench::File.new(path: "private", contents: "secret")],
+        files: [GeniusBench::SourceFile.new(path: "private", contents: "secret")],
         tools: tools,
         command: ["check"],
         stdin: "secret",
@@ -100,7 +100,7 @@ RSpec.describe GeniusBench::Task do
         lambda do
           described_class.new(
             id: "bad id",
-            fixture: [GeniusBench::File.new(path: "../bad", contents: "")],
+            fixture: [GeniusBench::SourceFile.new(path: "../bad", contents: "")],
             instruction: GeniusBench::Instruction.new(prompt: ""),
             criterion: GeniusBench::Criterion.code(
               verifier: GeniusBench::Verifier.new(inputs: [], files: [], tools: [], command: [], stdin: "", timeout_seconds: 0)
@@ -149,7 +149,7 @@ RSpec.describe GeniusBench::Task do
       end
     end
 
-    context "with a fixture entry that is not a File" do
+    context "with a fixture entry that is not a SourceFile" do
       let(:fixture) { ["no"] }
 
       it "raises TypeError" do

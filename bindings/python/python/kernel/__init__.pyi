@@ -5,7 +5,7 @@ __all__ = [
     "Assessment",
     "Case",
     "Criterion",
-    "File",
+    "SourceFile",
     "GradingError",
     "Instruction",
     "Issue",
@@ -161,7 +161,7 @@ class Assessment:
     def checks(self) -> tuple[tuple[str, Assessment], ...]: ...
 
 @final
-class File:
+class SourceFile:
     def __new__(cls, *, path: str, contents: str) -> Self: ...
     @property
     def path(self) -> str: ...
@@ -180,8 +180,8 @@ class Verifier:
         cls,
         *,
         inputs: Sequence[str],
-        files: Sequence[File],
-        tools: Sequence[File],
+        files: Sequence[SourceFile],
+        tools: Sequence[SourceFile],
         command: Sequence[str],
         stdin: str,
         timeout_seconds: int,
@@ -189,9 +189,9 @@ class Verifier:
     @property
     def inputs(self) -> tuple[str, ...]: ...
     @property
-    def files(self) -> tuple[File, ...]: ...
+    def files(self) -> tuple[SourceFile, ...]: ...
     @property
-    def tools(self) -> tuple[File, ...]: ...
+    def tools(self) -> tuple[SourceFile, ...]: ...
     @property
     def command(self) -> tuple[str, ...]: ...
     @property
@@ -239,9 +239,9 @@ class Criterion:
 
 @final
 class Reference:
-    def __new__(cls, *, edits: Sequence[File], completion: Value) -> Self: ...
+    def __new__(cls, *, edits: Sequence[SourceFile], completion: Value) -> Self: ...
     @property
-    def edits(self) -> tuple[File, ...]: ...
+    def edits(self) -> tuple[SourceFile, ...]: ...
     @property
     def completion(self) -> Value: ...
 
@@ -252,7 +252,7 @@ class Case:
     @property
     def prompt(self) -> str: ...
     @property
-    def files(self) -> tuple[File, ...]: ...
+    def files(self) -> tuple[SourceFile, ...]: ...
 
 @final
 class Issue:
@@ -275,7 +275,7 @@ class Task:
         cls,
         *,
         id: str,
-        fixture: Sequence[File],
+        fixture: Sequence[SourceFile],
         instruction: Instruction,
         criterion: Criterion,
         allowed_files: Sequence[str],
@@ -284,7 +284,7 @@ class Task:
     @property
     def id(self) -> str: ...
     @property
-    def fixture(self) -> tuple[File, ...]: ...
+    def fixture(self) -> tuple[SourceFile, ...]: ...
     @property
     def instruction(self) -> Instruction: ...
     @property

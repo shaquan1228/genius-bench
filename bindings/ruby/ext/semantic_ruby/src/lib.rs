@@ -755,34 +755,36 @@ fn assessment_checks(ruby: &Ruby, this: &Assessment) -> Result<RArray, Error> {
     }
 }
 
-#[magnus::wrap(class = "GeniusBench::File", free_immediately, size)]
+#[magnus::wrap(class = "GeniusBench::SourceFile", free_immediately, size)]
 #[derive(Clone)]
-struct File(core::File);
-wrapped!(File, core::File);
+struct SourceFile(core::File);
+wrapped!(SourceFile, core::File);
 
-fn file_new(ruby: &Ruby, args: &[RValue]) -> Result<Obj<File>, Error> {
+fn file_new(ruby: &Ruby, args: &[RValue]) -> Result<Obj<SourceFile>, Error> {
     let (path, contents): (RValue, RValue) = required(args, &["path", "contents"])?;
     Ok(frozen(
         ruby,
-        File(core::File {
+        SourceFile(core::File {
             path: text(ruby, path)?,
             contents: text(ruby, contents)?,
         }),
     ))
 }
 
-fn file_path(ruby: &Ruby, this: &File) -> RString {
+fn file_path(ruby: &Ruby, this: &SourceFile) -> RString {
     string(ruby, &this.0.path)
 }
 
-fn file_contents(ruby: &Ruby, this: &File) -> RString {
+fn file_contents(ruby: &Ruby, this: &SourceFile) -> RString {
     string(ruby, &this.0.contents)
 }
 
 fn files(ruby: &Ruby, items: &[core::File]) -> Result<RArray, Error> {
     array(
         ruby,
-        items.iter().map(|file| frozen(ruby, File(file.clone()))),
+        items
+            .iter()
+            .map(|file| frozen(ruby, SourceFile(file.clone()))),
     )
 }
 
@@ -833,11 +835,11 @@ fn verifier_new(ruby: &Ruby, args: &[RValue]) -> Result<Obj<Verifier>, Error> {
         ruby,
         Verifier(core::Verifier {
             inputs: texts(ruby, inputs)?,
-            files: objects::<File>(ruby, files)?
+            files: objects::<SourceFile>(ruby, files)?
                 .into_iter()
                 .map(|file| file.0)
                 .collect(),
-            tools: objects::<File>(ruby, tools)?
+            tools: objects::<SourceFile>(ruby, tools)?
                 .into_iter()
                 .map(|file| file.0)
                 .collect(),
@@ -1014,7 +1016,7 @@ fn reference_new(ruby: &Ruby, args: &[RValue]) -> Result<Obj<Reference>, Error> 
     Ok(frozen(
         ruby,
         Reference(core::Reference {
-            edits: objects::<File>(ruby, edits)?
+            edits: objects::<SourceFile>(ruby, edits)?
                 .into_iter()
                 .map(|file| file.0)
                 .collect(),
@@ -1149,7 +1151,7 @@ fn task_new(ruby: &Ruby, args: &[RValue]) -> Result<Obj<Task>, Error> {
     }
     core::Task::new(
         text(ruby, id)?,
-        objects::<File>(ruby, fixture)?
+        objects::<SourceFile>(ruby, fixture)?
             .into_iter()
             .map(|file| file.0)
             .collect(),
@@ -1313,8 +1315,8 @@ fn init(ruby: &Ruby) -> Result<(), Error> {
     assessment.define_method("observation", method!(assessment_observation, 0))?;
     assessment.define_method("checks", method!(assessment_checks, 0))?;
 
-    let file = module.define_class("File", object)?;
-    identity!(file, File);
+    let file = module.define_class("SourceFile", object)?;
+    identity!(file, SourceFile);
     file.define_singleton_method("new", function!(file_new, -1))?;
     file.define_method("path", method!(file_path, 0))?;
     file.define_method("contents", method!(file_contents, 0))?;

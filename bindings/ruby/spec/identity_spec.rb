@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
 RSpec.describe "value identity" do
-  file = -> { GeniusBench::File.new(path: "a.txt", contents: "data") }
-  tool = -> { GeniusBench::File.new(path: "tool", contents: "public") }
+  file = -> { GeniusBench::SourceFile.new(path: "a.txt", contents: "data") }
+  tool = -> { GeniusBench::SourceFile.new(path: "tool", contents: "public") }
   verifier = -> { GeniusBench::Verifier.new(inputs: ["a.txt"], files: [], tools: [tool.call], command: ["check"], stdin: "", timeout_seconds: 1) }
   rubric = -> { GeniusBench::Rubric.new(expected: [["answer", GeniusBench::Value.from_ruby(value: 42)]], text_rule: nil) }
   task = lambda do
@@ -40,7 +40,7 @@ RSpec.describe "value identity" do
     GeniusBench::Verification => -> { GeniusBench::Verification.harness_error(detail: "lost") },
     GeniusBench::Outcome => outcome,
     GeniusBench::Assessment => -> { GeniusBench::Assessment.new(predicate: GeniusBench::Predicate.present(path: []), observation: GeniusBench::Value.from_ruby(value: 1)) },
-    GeniusBench::File => file,
+    GeniusBench::SourceFile => file,
     GeniusBench::Instruction => -> { GeniusBench::Instruction.new(prompt: "change") },
     GeniusBench::Verifier => verifier,
     GeniusBench::TextRule => -> { GeniusBench::TextRule.new(field: "reason", min_words: 1, max_words: 5) },

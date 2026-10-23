@@ -8,7 +8,7 @@ RSpec.shared_examples "a frozen declaration" do
   end
 end
 
-RSpec.describe GeniusBench::File do
+RSpec.describe GeniusBench::SourceFile do
   describe ".new" do
     subject(:file) { described_class.new(path: "a.txt", contents: "data") }
 
@@ -61,8 +61,8 @@ RSpec.describe GeniusBench::Verifier do
     subject(:verifier) do
       described_class.new(
         inputs: ["a.txt"],
-        files: [GeniusBench::File.new(path: "private", contents: "secret")],
-        tools: [GeniusBench::File.new(path: "tool", contents: "public")],
+        files: [GeniusBench::SourceFile.new(path: "private", contents: "secret")],
+        tools: [GeniusBench::SourceFile.new(path: "tool", contents: "public")],
         command: ["check"],
         stdin: "secret",
         timeout_seconds: 1
@@ -86,7 +86,7 @@ RSpec.describe GeniusBench::Verifier do
       end
     end
 
-    context "with a file that is not a File" do
+    context "with a file that is not a SourceFile" do
       it "raises TypeError" do
         expect { described_class.new(inputs: [], files: ["no"], tools: [], command: [], stdin: "", timeout_seconds: 1) }.to raise_error(TypeError)
       end
@@ -202,7 +202,7 @@ end
 
 RSpec.describe GeniusBench::Reference do
   describe ".new" do
-    subject(:reference) { described_class.new(edits: [GeniusBench::File.new(path: "a.txt", contents: "new")], completion: kernel("done")) }
+    subject(:reference) { described_class.new(edits: [GeniusBench::SourceFile.new(path: "a.txt", contents: "new")], completion: kernel("done")) }
 
     it_behaves_like "a frozen declaration"
 
