@@ -117,4 +117,14 @@ RSpec.describe GeniusBench do
       end
     end
   end
+
+  describe "native classes" do
+    described_class.constants.map { |name| described_class.const_get(name) }.grep(Class).reject { |klass| klass < Exception }.each do |klass|
+      context "when calling #{klass}.allocate" do
+        it "raises TypeError" do
+          expect { klass.allocate }.to raise_error(TypeError, /allocator undefined/)
+        end
+      end
+    end
+  end
 end

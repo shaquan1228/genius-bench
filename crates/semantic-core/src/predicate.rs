@@ -4,7 +4,7 @@ use crate::{Value, support};
 file edits, structured replies, tool traces, and environment state.
 https://arxiv.org/abs/2307.13854 (WebArena: exact_match, must_include, located state)
 https://arxiv.org/abs/2406.13352 (AgentDojo: utility and security as separate predicates) */
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Hash)]
 pub enum Predicate {
     Present {
         path: Vec<String>,

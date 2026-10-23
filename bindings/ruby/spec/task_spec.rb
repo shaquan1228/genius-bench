@@ -135,6 +135,10 @@ RSpec.describe GeniusBench::Task do
       it "keeps issues immutable" do
         expect { error.issues[0].field = "changed" }.to raise_error(NoMethodError)
       end
+
+      it "returns Issue instances" do
+        expect(error.issues[0]).to be_a(GeniusBench::Issue)
+      end
     end
 
     context "with a predicate nested beyond the limit" do

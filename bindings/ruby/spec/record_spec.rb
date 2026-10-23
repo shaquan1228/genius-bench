@@ -25,8 +25,30 @@ RSpec.describe GeniusBench::Record do
     end
 
     context "with a symbol name" do
+      subject(:record) { described_class.new(fields: [[:name, 1]]) }
+
+      it "converts the name" do
+        expect(scalars_of(record.fields)).to eq([["name", 1]])
+      end
+    end
+
+    context "with a Hash of fields" do
+      subject(:record) { described_class.new(fields: { name: 1, "text" => "x" }) }
+
+      it "keeps the entry order" do
+        expect(scalars_of(record.fields)).to eq([["name", 1], ["text", "x"]])
+      end
+    end
+
+    context "with a name that is not a String or Symbol" do
       it "raises TypeError" do
-        expect { described_class.new(fields: [[:name, 1]]) }.to raise_error(TypeError)
+        expect { described_class.new(fields: [[1, 1]]) }.to raise_error(TypeError)
+      end
+    end
+
+    context "with fields that are not pairs or a Hash" do
+      it "raises TypeError" do
+        expect { described_class.new(fields: "x") }.to raise_error(TypeError)
       end
     end
 

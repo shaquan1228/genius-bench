@@ -3,13 +3,13 @@ use std::fmt;
 /* Failures: a rejected declaration keeps every issue; a grading failure is a harness
 fault, kept apart from an incorrect candidate.
 https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents */
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Issue {
     pub field: String,
     pub message: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ValidationFailure {
     pub case_id: Option<String>,
     pub issues: Vec<Issue>,
@@ -32,7 +32,7 @@ impl fmt::Display for ValidationFailure {
 
 impl std::error::Error for ValidationFailure {}
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum GradingFailure {
     VerificationHarnessError { detail: String },
 }

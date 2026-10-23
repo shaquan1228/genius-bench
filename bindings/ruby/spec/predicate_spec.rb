@@ -190,6 +190,14 @@ RSpec.describe GeniusBench::Predicate do
         expect { predicate }.to raise_error(TypeError)
       end
     end
+
+    context "with a Hash of checks keyed by symbols" do
+      let(:checks) { { one: described_class.present(path: ["present"]), two: described_class.present(path: ["null"]) } }
+
+      it "names the checks in entry order" do
+        expect(predicate.checks.map(&:first)).to eq(%w[one two])
+      end
+    end
   end
 
   describe ".any" do

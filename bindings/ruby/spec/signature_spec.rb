@@ -31,11 +31,11 @@ RSpec.describe "sig/genius_bench.rbs" do
 
     describe name.to_s do
       it "declares the singleton methods" do
-        expect(singleton).to eq(constant.singleton_methods(false).sort)
+        expect(singleton).to eq(constant.singleton_methods(false).grep_v(/__with(out)?__/).sort)
       end
 
       it "declares the instance methods" do
-        expect(instance).to eq(constant.public_instance_methods(false).sort)
+        expect(instance).to eq(constant.public_instance_methods(false).grep_v(/__with(out)?__/).sort)
       end
     end
   end

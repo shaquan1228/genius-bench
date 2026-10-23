@@ -48,6 +48,14 @@ RSpec.describe GeniusBench::Outcome do
       end
     end
 
+    context "with facts as a Hash" do
+      let(:facts) { { extra: kernel(true) } }
+
+      it "names the facts" do
+        expect(scalars_of(outcome.facts)).to eq([["extra", true]])
+      end
+    end
+
     context "with facts nested to the limit" do
       let(:deepest) { (1..255).reduce(kernel(nil)) { |inner, _| kernel([inner]) } }
       let(:observation) { build_outcome(response: deepest, facts: [["fact", deepest]]).observation }

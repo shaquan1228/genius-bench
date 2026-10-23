@@ -9,6 +9,48 @@ use magnus::{
 };
 use semantic_core as core;
 use std::collections::HashSet;
+use std::fmt;
+use std::hash::{DefaultHasher, Hash, Hasher};
+
+trait Wrapped: TypedData {
+    type Inner: PartialEq + Hash + fmt::Debug;
+    fn inner(&self) -> &Self::Inner;
+}
+
+macro_rules! wrapped {
+    ($type:ty, $inner:ty) => {
+        impl Wrapped for $type {
+            type Inner = $inner;
+            fn inner(&self) -> &$inner {
+                &self.0
+            }
+        }
+    };
+}
+
+macro_rules! identity {
+    ($class:expr, $type:ty) => {{
+        $class.undef_default_alloc_func();
+        $class.define_method("==", method!(equal::<$type>, 1))?;
+        $class.define_method("eql?", method!(equal::<$type>, 1))?;
+        $class.define_method("hash", method!(hash_code::<$type>, 0))?;
+        $class.define_method("inspect", method!(inspect::<$type>, 0))?;
+    }};
+}
+
+fn equal<T: Wrapped>(this: &T, other: RValue) -> bool {
+    <&T>::try_convert(other).is_ok_and(|other| this.inner() == other.inner())
+}
+
+fn hash_code<T: Wrapped>(this: &T) -> i64 {
+    let mut hasher = DefaultHasher::new();
+    this.inner().hash(&mut hasher);
+    hasher.finish() as i64
+}
+
+fn inspect<T: Wrapped>(ruby: &Ruby, this: &T) -> String {
+    format!("#<{} {:?}>", T::class(ruby), this.inner())
+}
 
 static VALIDATION_ERROR: Lazy<ExceptionClass> =
     Lazy::new(|ruby| error_class(ruby, "ValidationError"));
@@ -142,17 +184,31 @@ fn named<T>(
     value: RValue,
     mut convert: impl FnMut(RValue) -> Result<T, Error>,
 ) -> Result<Vec<(String, T)>, Error> {
-    let entries = list(ruby, value)?;
-    let count = entries.len();
-    let mut names = Vec::with_capacity(count);
-    let items = ruby.ary_new_capa(count);
-    for index in 0..count {
-        let entry = entries.entry::<RValue>(index as isize)?;
-        let pair = RArray::from_value(entry)
-            .filter(|pair| pair.len() == 2)
-            .ok_or_else(|| unexpected(ruby, "a name and value pair", entry))?;
-        names.push(text(ruby, pair.entry(0)?)?);
-        items.push(pair.entry::<RValue>(1)?)?;
+    let mut names = Vec::new();
+    let items = ruby.ary_new();
+    if let Some(mapping) = RHash::from_value(value) {
+        let entries = ruby.ary_new_capa(mapping.len() * 2);
+        mapping.foreach(|key: RValue, item: RValue| {
+            entries.push(key)?;
+            entries.push(item)?;
+            Ok(ForEach::Continue)
+        })?;
+        for index in (0..entries.len()).step_by(2) {
+            names.push(field_name(ruby, entries.entry(index as isize)?)?);
+            items.push(entries.entry::<RValue>(index as isize + 1)?)?;
+        }
+    } else {
+        let entries = RArray::from_value(value)
+            .ok_or_else(|| unexpected(ruby, "an Array of name and value pairs or a Hash", value))?
+            .dup();
+        for index in 0..entries.len() {
+            let entry = entries.entry::<RValue>(index as isize)?;
+            let pair = RArray::from_value(entry)
+                .filter(|pair| pair.len() == 2)
+                .ok_or_else(|| unexpected(ruby, "a name and value pair", entry))?;
+            names.push(field_name(ruby, pair.entry(0)?)?);
+            items.push(pair.entry::<RValue>(1)?)?;
+        }
     }
     names
         .into_iter()
@@ -216,25 +272,16 @@ fn convert(
         return Err(argument_error(ruby, "Cyclic kernel value".into()));
     }
     let result = (|| {
-        if let Some(mapping) = RHash::from_value(value) {
-            let entries = ruby.ary_new_capa(mapping.len() * 2);
-            mapping.foreach(|key: RValue, item: RValue| {
-                entries.push(key)?;
-                entries.push(item)?;
-                Ok(ForEach::Continue)
-            })?;
-            let mut fields = Vec::with_capacity(mapping.len());
+        if RHash::from_value(value).is_some() {
+            let fields = named(ruby, value, |item| convert(ruby, item, active, depth + 1))?;
             let mut names = HashSet::new();
-            for index in (0..entries.len()).step_by(2) {
-                let name = field_name(ruby, entries.entry(index as isize)?)?;
-                if !names.insert(name.clone()) {
+            for (name, _) in &fields {
+                if !names.insert(name) {
                     return Err(argument_error(
                         ruby,
                         format!("Duplicate record field: {name}"),
                     ));
                 }
-                let item = convert(ruby, entries.entry(index as isize + 1)?, active, depth + 1)?;
-                fields.push((name, item));
             }
             Ok(core::Value::Record(fields))
         } else if let Some(items) = RArray::from_value(value) {
@@ -257,6 +304,7 @@ fn convert(
 #[magnus::wrap(class = "GeniusBench::Value", free_immediately, size)]
 #[derive(Clone)]
 struct Value(core::Value);
+wrapped!(Value, core::Value);
 
 fn value_from_ruby(ruby: &Ruby, args: &[RValue]) -> Result<Obj<Value>, Error> {
     let (value,): (RValue,) = required(args, &["value"])?;
@@ -340,6 +388,7 @@ fn value_equal_to(this: &Value, args: &[RValue]) -> Result<bool, Error> {
 #[magnus::wrap(class = "GeniusBench::Record", free_immediately, size)]
 #[derive(Clone)]
 struct Record(Vec<(String, core::Value)>);
+wrapped!(Record, Vec<(String, core::Value)>);
 
 fn record_new(ruby: &Ruby, args: &[RValue]) -> Result<Obj<Record>, Error> {
     let (fields,): (RValue,) = required(args, &["fields"])?;
@@ -359,6 +408,7 @@ fn record_to_kernel_value(ruby: &Ruby, this: &Record) -> Obj<Value> {
 #[magnus::wrap(class = "GeniusBench::Predicate", free_immediately, size)]
 #[derive(Clone)]
 struct Predicate(core::Predicate);
+wrapped!(Predicate, core::Predicate);
 
 fn predicate_present(ruby: &Ruby, args: &[RValue]) -> Result<Obj<Predicate>, Error> {
     let (path,): (RValue,) = required(args, &["path"])?;
@@ -539,6 +589,7 @@ fn predicate_check(ruby: &Ruby, this: &Predicate) -> Option<Obj<Predicate>> {
 #[magnus::wrap(class = "GeniusBench::Verification", free_immediately, size)]
 #[derive(Clone)]
 struct Verification(core::Verification);
+wrapped!(Verification, core::Verification);
 
 fn verification_unchecked(ruby: &Ruby) -> Obj<Verification> {
     frozen(ruby, Verification(core::Verification::Unchecked))
@@ -584,6 +635,7 @@ fn verification_detail(ruby: &Ruby, this: &Verification) -> Option<RString> {
 #[magnus::wrap(class = "GeniusBench::Outcome", free_immediately, size)]
 #[derive(Clone)]
 struct Outcome(core::Outcome);
+wrapped!(Outcome, core::Outcome);
 
 fn outcome_new(ruby: &Ruby, args: &[RValue]) -> Result<Obj<Outcome>, Error> {
     let (changed_files, verification, response, facts): (
@@ -635,6 +687,7 @@ fn outcome_observation(ruby: &Ruby, this: &Outcome) -> Obj<Value> {
 #[magnus::wrap(class = "GeniusBench::Assessment", free_immediately, size)]
 #[derive(Clone)]
 struct Assessment(core::Assessment);
+wrapped!(Assessment, core::Assessment);
 
 fn assessment_new(ruby: &Ruby, args: &[RValue]) -> Result<Obj<Assessment>, Error> {
     let (predicate, observation): (Obj<Predicate>, Obj<Value>) =
@@ -705,6 +758,7 @@ fn assessment_checks(ruby: &Ruby, this: &Assessment) -> Result<RArray, Error> {
 #[magnus::wrap(class = "GeniusBench::File", free_immediately, size)]
 #[derive(Clone)]
 struct File(core::File);
+wrapped!(File, core::File);
 
 fn file_new(ruby: &Ruby, args: &[RValue]) -> Result<Obj<File>, Error> {
     let (path, contents): (RValue, RValue) = required(args, &["path", "contents"])?;
@@ -735,6 +789,7 @@ fn files(ruby: &Ruby, items: &[core::File]) -> Result<RArray, Error> {
 #[magnus::wrap(class = "GeniusBench::Instruction", free_immediately, size)]
 #[derive(Clone)]
 struct Instruction(core::Instruction);
+wrapped!(Instruction, core::Instruction);
 
 fn instruction_new(ruby: &Ruby, args: &[RValue]) -> Result<Obj<Instruction>, Error> {
     let (prompt,): (RValue,) = required(args, &["prompt"])?;
@@ -753,6 +808,7 @@ fn instruction_prompt(ruby: &Ruby, this: &Instruction) -> RString {
 #[magnus::wrap(class = "GeniusBench::Verifier", free_immediately, size)]
 #[derive(Clone)]
 struct Verifier(core::Verifier);
+wrapped!(Verifier, core::Verifier);
 
 fn verifier_new(ruby: &Ruby, args: &[RValue]) -> Result<Obj<Verifier>, Error> {
     let (inputs, files, tools, command, stdin, timeout_seconds): (
@@ -819,6 +875,7 @@ fn verifier_timeout_seconds(this: &Verifier) -> i64 {
 #[magnus::wrap(class = "GeniusBench::TextRule", free_immediately, size)]
 #[derive(Clone)]
 struct TextRule(core::TextRule);
+wrapped!(TextRule, core::TextRule);
 
 fn text_rule_new(ruby: &Ruby, args: &[RValue]) -> Result<Obj<TextRule>, Error> {
     let (field, min_words, max_words): (RValue, RValue, RValue) =
@@ -848,6 +905,7 @@ fn text_rule_max_words(this: &TextRule) -> i64 {
 #[magnus::wrap(class = "GeniusBench::Rubric", free_immediately, size)]
 #[derive(Clone)]
 struct Rubric(core::Rubric);
+wrapped!(Rubric, core::Rubric);
 
 fn rubric_new(ruby: &Ruby, args: &[RValue]) -> Result<Obj<Rubric>, Error> {
     let (expected, text_rule): (RValue, Option<Obj<TextRule>>) =
@@ -878,6 +936,7 @@ fn rubric_text_rule(ruby: &Ruby, this: &Rubric) -> Option<Obj<TextRule>> {
 #[magnus::wrap(class = "GeniusBench::Criterion", free_immediately, size)]
 #[derive(Clone)]
 struct Criterion(core::Criterion);
+wrapped!(Criterion, core::Criterion);
 
 fn criterion_code(ruby: &Ruby, args: &[RValue]) -> Result<Obj<Criterion>, Error> {
     let (verifier,): (Obj<Verifier>,) = required(args, &["verifier"])?;
@@ -948,6 +1007,7 @@ fn criterion_predicate(ruby: &Ruby, this: &Criterion) -> Option<Obj<Predicate>> 
 #[magnus::wrap(class = "GeniusBench::Reference", free_immediately, size)]
 #[derive(Clone)]
 struct Reference(core::Reference);
+wrapped!(Reference, core::Reference);
 
 fn reference_new(ruby: &Ruby, args: &[RValue]) -> Result<Obj<Reference>, Error> {
     let (edits, completion): (RValue, Obj<Value>) = required(args, &["edits", "completion"])?;
@@ -974,6 +1034,7 @@ fn reference_completion(ruby: &Ruby, this: &Reference) -> Obj<Value> {
 #[magnus::wrap(class = "GeniusBench::Case", free_immediately, size)]
 #[derive(Clone)]
 struct Case(core::Case);
+wrapped!(Case, core::Case);
 
 fn case_case_id(ruby: &Ruby, this: &Case) -> RString {
     string(ruby, &this.0.case_id)
@@ -990,6 +1051,7 @@ fn case_files(ruby: &Ruby, this: &Case) -> Result<RArray, Error> {
 #[magnus::wrap(class = "GeniusBench::Issue", free_immediately, size)]
 #[derive(Clone)]
 struct Issue(core::Issue);
+wrapped!(Issue, core::Issue);
 
 fn issue_field(ruby: &Ruby, this: &Issue) -> RString {
     string(ruby, &this.0.field)
@@ -1021,7 +1083,9 @@ fn validation_error(ruby: &Ruby, failure: core::ValidationFailure) -> Error {
         )?;
         Ok(exception.into())
     };
-    build().unwrap_or_else(|_| Error::new(class, message.clone()))
+    match build() {
+        Ok(error) | Err(error) => error,
+    }
 }
 
 fn grading_error(ruby: &Ruby, failure: core::GradingFailure) -> Error {
@@ -1035,7 +1099,9 @@ fn grading_error(ruby: &Ruby, failure: core::GradingFailure) -> Error {
         object.ivar_set("@detail", string(ruby, detail))?;
         Ok(exception.into())
     };
-    build().unwrap_or_else(|_| Error::new(class, message.clone()))
+    match build() {
+        Ok(error) | Err(error) => error,
+    }
 }
 
 fn error_case_id(this: RObject) -> Result<RValue, Error> {
@@ -1057,6 +1123,7 @@ fn error_detail(this: RObject) -> Result<RValue, Error> {
 #[magnus::wrap(class = "GeniusBench::Task", free_immediately, size)]
 #[derive(Clone)]
 struct Task(core::Task);
+wrapped!(Task, core::Task);
 
 fn task_new(ruby: &Ruby, args: &[RValue]) -> Result<Obj<Task>, Error> {
     let (id, fixture, instruction, criterion, allowed_files, reference): (
@@ -1175,7 +1242,7 @@ fn init(ruby: &Ruby) -> Result<(), Error> {
     Lazy::force(&GRADING_ERROR, ruby);
 
     let value = module.define_class("Value", object)?;
-    value.undef_default_alloc_func();
+    identity!(value, Value);
     value.define_singleton_method("from_ruby", function!(value_from_ruby, -1))?;
     value.define_method("kind", method!(value_kind, 0))?;
     value.define_method("scalar", method!(value_scalar, 0))?;
@@ -1185,12 +1252,13 @@ fn init(ruby: &Ruby) -> Result<(), Error> {
     value.define_method("equal_to?", method!(value_equal_to, -1))?;
 
     let record = module.define_class("Record", object)?;
+    identity!(record, Record);
     record.define_singleton_method("new", function!(record_new, -1))?;
     record.define_method("fields", method!(record_fields, 0))?;
     record.define_method("to_kernel_value", method!(record_to_kernel_value, 0))?;
 
     let predicate = module.define_class("Predicate", object)?;
-    predicate.undef_default_alloc_func();
+    identity!(predicate, Predicate);
     predicate.define_singleton_method("present", function!(predicate_present, -1))?;
     predicate.define_singleton_method("equals", function!(predicate_equals, -1))?;
     predicate.define_singleton_method("within", function!(predicate_within, -1))?;
@@ -1211,7 +1279,7 @@ fn init(ruby: &Ruby) -> Result<(), Error> {
     predicate.define_method("check", method!(predicate_check, 0))?;
 
     let verification = module.define_class("Verification", object)?;
-    verification.undef_default_alloc_func();
+    identity!(verification, Verification);
     verification.define_singleton_method("unchecked", function!(verification_unchecked, 0))?;
     verification.define_singleton_method("passed", function!(verification_passed, 0))?;
     verification.define_singleton_method("failed", function!(verification_failed, 0))?;
@@ -1226,6 +1294,7 @@ fn init(ruby: &Ruby) -> Result<(), Error> {
     verification.define_method("detail", method!(verification_detail, 0))?;
 
     let outcome = module.define_class("Outcome", object)?;
+    identity!(outcome, Outcome);
     outcome.define_singleton_method("new", function!(outcome_new, -1))?;
     outcome.define_method("changed_files", method!(outcome_changed_files, 0))?;
     outcome.define_method("verification", method!(outcome_verification, 0))?;
@@ -1234,6 +1303,7 @@ fn init(ruby: &Ruby) -> Result<(), Error> {
     outcome.define_method("observation", method!(outcome_observation, 0))?;
 
     let assessment = module.define_class("Assessment", object)?;
+    identity!(assessment, Assessment);
     assessment.define_singleton_method("new", function!(assessment_new, -1))?;
     assessment.define_method("passed?", method!(assessment_passed, 0))?;
     assessment.define_method("observed", method!(assessment_observed, 0))?;
@@ -1244,15 +1314,18 @@ fn init(ruby: &Ruby) -> Result<(), Error> {
     assessment.define_method("checks", method!(assessment_checks, 0))?;
 
     let file = module.define_class("File", object)?;
+    identity!(file, File);
     file.define_singleton_method("new", function!(file_new, -1))?;
     file.define_method("path", method!(file_path, 0))?;
     file.define_method("contents", method!(file_contents, 0))?;
 
     let instruction = module.define_class("Instruction", object)?;
+    identity!(instruction, Instruction);
     instruction.define_singleton_method("new", function!(instruction_new, -1))?;
     instruction.define_method("prompt", method!(instruction_prompt, 0))?;
 
     let verifier = module.define_class("Verifier", object)?;
+    identity!(verifier, Verifier);
     verifier.define_singleton_method("new", function!(verifier_new, -1))?;
     verifier.define_method("inputs", method!(verifier_inputs, 0))?;
     verifier.define_method("files", method!(verifier_files, 0))?;
@@ -1262,18 +1335,20 @@ fn init(ruby: &Ruby) -> Result<(), Error> {
     verifier.define_method("timeout_seconds", method!(verifier_timeout_seconds, 0))?;
 
     let text_rule = module.define_class("TextRule", object)?;
+    identity!(text_rule, TextRule);
     text_rule.define_singleton_method("new", function!(text_rule_new, -1))?;
     text_rule.define_method("field", method!(text_rule_field, 0))?;
     text_rule.define_method("min_words", method!(text_rule_min_words, 0))?;
     text_rule.define_method("max_words", method!(text_rule_max_words, 0))?;
 
     let rubric = module.define_class("Rubric", object)?;
+    identity!(rubric, Rubric);
     rubric.define_singleton_method("new", function!(rubric_new, -1))?;
     rubric.define_method("expected", method!(rubric_expected, 0))?;
     rubric.define_method("text_rule", method!(rubric_text_rule, 0))?;
 
     let criterion = module.define_class("Criterion", object)?;
-    criterion.undef_default_alloc_func();
+    identity!(criterion, Criterion);
     criterion.define_singleton_method("code", function!(criterion_code, -1))?;
     criterion.define_singleton_method("answer", function!(criterion_answer, -1))?;
     criterion.define_singleton_method("state", function!(criterion_state, -1))?;
@@ -1284,22 +1359,24 @@ fn init(ruby: &Ruby) -> Result<(), Error> {
     criterion.define_method("predicate", method!(criterion_predicate, 0))?;
 
     let reference = module.define_class("Reference", object)?;
+    identity!(reference, Reference);
     reference.define_singleton_method("new", function!(reference_new, -1))?;
     reference.define_method("edits", method!(reference_edits, 0))?;
     reference.define_method("completion", method!(reference_completion, 0))?;
 
     let case = module.define_class("Case", object)?;
-    case.undef_default_alloc_func();
+    identity!(case, Case);
     case.define_method("case_id", method!(case_case_id, 0))?;
     case.define_method("prompt", method!(case_prompt, 0))?;
     case.define_method("files", method!(case_files, 0))?;
 
     let issue = module.define_class("Issue", object)?;
-    issue.undef_default_alloc_func();
+    identity!(issue, Issue);
     issue.define_method("field", method!(issue_field, 0))?;
     issue.define_method("message", method!(issue_message, 0))?;
 
     let task = module.define_class("Task", object)?;
+    identity!(task, Task);
     task.define_singleton_method("new", function!(task_new, -1))?;
     task.define_method("id", method!(task_id, 0))?;
     task.define_method("fixture", method!(task_fixture, 0))?;

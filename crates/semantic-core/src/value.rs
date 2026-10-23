@@ -2,6 +2,8 @@
 state goals over files, tool traces, database state, or structured replies alike.
 https://arxiv.org/abs/2406.12045 (tau-bench grades a final database state)
 https://arxiv.org/abs/2307.13854 (WebArena grades answers and located page state) */
+use std::hash::{Hash, Hasher};
+
 #[derive(Clone, Debug)]
 pub enum Value {
     Null,
@@ -79,5 +81,28 @@ impl Value {
 impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
         self.equal(other)
+    }
+}
+
+impl Hash for Value {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        std::mem::discriminant(self).hash(state);
+        match self {
+            Self::Null => {}
+            Self::Bool(value) => value.hash(state),
+            Self::Int(value) => value.hash(state),
+            Self::Float(value) => (if *value == 0.0 { 0.0 } else { *value })
+                .to_bits()
+                .hash(state),
+            Self::String(value) => value.hash(state),
+            Self::List(items) => items.hash(state),
+            Self::Record(fields) => {
+                let mut unique = std::collections::BTreeMap::new();
+                for (name, value) in fields {
+                    unique.entry(name.as_str()).or_insert(value);
+                }
+                unique.hash(state);
+            }
+        }
     }
 }

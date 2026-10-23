@@ -305,11 +305,50 @@ RSpec.describe GeniusBench::Value do
     end
 
     it "leaves identity equality to Ruby" do
-      expect(duplicate).to equal(duplicate)
+      expect(duplicate).not_to equal(kernel(GeniusBench::Record.new(fields: [["x", 1], ["x", 2]])))
     end
 
-    it "leaves == as identity" do
-      expect(duplicate).not_to eq(kernel({ "x" => 1 }))
+    it "rejects a value that is not a Value" do
+      expect { duplicate.equal_to?(other: 1) }.to raise_error(TypeError)
     end
+  end
+
+  describe "#==" do
+    subject(:value) { kernel({ "x" => 1, "y" => [1.5, nil] }) }
+
+    it { is_expected.to eq(kernel({ "y" => [1.5, nil], "x" => 1 })) }
+    it { is_expected.not_to eq(kernel({ "x" => 1 })) }
+    it { is_expected.not_to eq({ "x" => 1, "y" => [1.5, nil] }) }
+    it { is_expected.to eql(kernel({ "x" => 1, "y" => [1.5, nil] })) }
+
+    it "keeps NaN unequal to itself" do
+      nan = kernel(Float::NAN)
+      expect(nan).not_to eq(nan)
+    end
+  end
+
+  describe "#hash" do
+    it "agrees with == across field order" do
+      expect(kernel({ "x" => 1, "y" => 2 }).hash).to eq(kernel({ "y" => 2, "x" => 1 }).hash)
+    end
+
+    it "agrees with == across signed zeros" do
+      expect(kernel(-0.0).hash).to eq(kernel(0.0).hash)
+    end
+
+    it "agrees with == across duplicate fields" do
+      duplicate = kernel(GeniusBench::Record.new(fields: [["x", 1], ["x", 2]]))
+      expect(duplicate.hash).to eq(kernel({ "x" => 1 }).hash)
+    end
+
+    it "deduplicates equal values in a Hash" do
+      expect({ kernel([1]) => true, kernel([1]) => false }.size).to eq(1)
+    end
+  end
+
+  describe "#inspect" do
+    subject { kernel([1, "x"]).inspect }
+
+    it { is_expected.to eq('#<GeniusBench::Value List([Int(1), String("x")])>') }
   end
 end
