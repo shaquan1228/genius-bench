@@ -8,8 +8,11 @@ ROOT = File.expand_path("../..", __dir__)
 STAGE = "pkg/source"
 CORE = "crates/semantic-core"
 
-FileUtils.cp("#{ROOT}/LICENSE", "LICENSE")
 GEMSPEC = Gem::Specification.load("genius-bench-kernel.gemspec")
+
+file "LICENSE" => "#{ROOT}/LICENSE" do |license|
+  FileUtils.cp(license.source, license.name)
+end
 
 RbSys::ExtensionTask.new("semantic-ruby", GEMSPEC) do |ext|
   ext.lib_dir = "lib/genius_bench"
@@ -20,7 +23,7 @@ end
 RSpec::Core::RakeTask.new(:spec)
 
 desc "Build the source gem with the vendored semantic core"
-task "gem:source" do
+task "gem:source" => "LICENSE" do
   FileUtils.rm_rf(STAGE)
   (GEMSPEC.files + ["genius-bench-kernel.gemspec"]).each do |file|
     FileUtils.mkdir_p(File.dirname("#{STAGE}/#{file}"))
@@ -35,7 +38,7 @@ task "gem:source" do
     File.read("Cargo.toml") + "\n[workspace.package]" + File.read("#{ROOT}/Cargo.toml").split("[workspace.package]", 2).last
   )
   manifest = "#{STAGE}/ext/semantic_ruby/Cargo.toml"
-  File.write(manifest, File.read(manifest).sub('path = "../../../../crates/semantic-core"', 'path = "../../crates/semantic-core"'))
+  File.write(manifest, File.read(manifest).sub(%r{path = "(\.\./)+#{CORE}"}o, %(path = "../../#{CORE}")))
   Bundler.with_unbundled_env do
     Dir.chdir(STAGE) do
       sh "gem", "build", "genius-bench-kernel.gemspec", "--output", "../genius-bench-kernel-#{GEMSPEC.version}.gem"

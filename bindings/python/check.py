@@ -1,7 +1,6 @@
 import argparse
 import os
 from pathlib import Path
-import subprocess
 import sys
 import tarfile
 import tempfile
@@ -11,15 +10,14 @@ from verify_wheel import source_identity, verify
 
 ROOT = Path(__file__).resolve().parents[2]
 PACKAGE = ROOT / "bindings/python"
-
-
-def run(command, *, cwd=ROOT, env=None):
-    print("+ " + " ".join(map(str, command)), flush=True)
-    subprocess.run(command, cwd=cwd, env=env, check=True)
+sys.path.insert(0, str(ROOT / "scripts"))
+from support import run  # noqa: E402
 
 
 def main():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        description="Build the Python package from a source distribution and verify it."
+    )
     parser.add_argument("--uv", default=os.environ.get("UV", "uv"))
     parser.add_argument("--python", default="3.12")
     args = parser.parse_args()

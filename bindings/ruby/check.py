@@ -2,7 +2,7 @@ import argparse
 import os
 from pathlib import Path
 import shutil
-import subprocess
+import sys
 import tomllib
 
 from verify_gem import source_identity, verify
@@ -11,11 +11,12 @@ from verify_gem import source_identity, verify
 ROOT = Path(__file__).resolve().parents[2]
 PACKAGE = ROOT / "bindings/ruby"
 CORE = "crates/semantic-core"
+sys.path.insert(0, str(ROOT / "scripts"))
+from support import run as run_in  # noqa: E402
 
 
 def run(command, *, cwd=PACKAGE, env=None):
-    print("+ " + " ".join(map(str, command)), flush=True)
-    subprocess.run(command, cwd=cwd, env=env, check=True)
+    run_in(command, cwd=cwd, env=env)
 
 
 def packages(lock):
@@ -58,11 +59,15 @@ def check_stage(stage):
     )
     if (stage / "Cargo.toml").read_text() != expected_workspace:
         raise RuntimeError("Unexpected source gem workspace manifest")
-    manifest = PACKAGE / "ext/semantic_ruby/Cargo.toml"
-    expected_manifest = manifest.read_text().replace(
-        f'path = "../../../../{CORE}"', f'path = "../../{CORE}"'
+    manifest = tomllib.loads((PACKAGE / "ext/semantic_ruby/Cargo.toml").read_text())
+    staged_manifest = tomllib.loads(
+        (stage / "ext/semantic_ruby/Cargo.toml").read_text()
     )
-    if (stage / "ext/semantic_ruby/Cargo.toml").read_text() != expected_manifest:
+    core_path = staged_manifest["dependencies"]["semantic-core"].pop("path")
+    manifest["dependencies"]["semantic-core"].pop("path")
+    if (stage / "ext/semantic_ruby" / core_path).resolve() != staged_core.resolve():
+        raise RuntimeError("Source gem extension does not depend on the staged core")
+    if staged_manifest != manifest:
         raise RuntimeError("Unexpected extension manifest normalization")
     locked = packages(ROOT / "Cargo.lock")
     for (name, version), checksum in packages(stage / "Cargo.lock").items():
@@ -72,7 +77,9 @@ def check_stage(stage):
 
 
 def main():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        description="Lint, compile, test, package, and verify the Ruby gem."
+    )
     parser.add_argument("--bundle", default=os.environ.get("BUNDLE", "bundle"))
     parser.add_argument("--ruby", default=os.environ.get("RUBY", "ruby"))
     parser.add_argument("--cargo", default=os.environ.get("CARGO", "cargo"))
@@ -97,8 +104,13 @@ def main():
         ],
         env=environment,
     )
+    run([args.bundle, "exec", "standardrb"], env=environment)
     run([args.bundle, "exec", "rake", "compile", "spec"], env=environment)
     run([args.bundle, "exec", "rbs", "-I", "sig", "validate"], env=environment)
+    run(
+        [args.bundle, "exec", "rspec", "--tag", "~contract"],
+        env={**environment, "RBS_TEST": "1"},
+    )
     shutil.rmtree(PACKAGE / "pkg", ignore_errors=True)
     run([args.bundle, "exec", "rake", "gem:source"], env=environment)
     stage = PACKAGE / "pkg/source"

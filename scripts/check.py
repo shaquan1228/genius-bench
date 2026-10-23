@@ -150,7 +150,9 @@ def check(cargo, uv, python, bundle, ruby):
 
 
 def main():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        description="Run the core and binding gate, or the scoped pre-push gate."
+    )
     parser.add_argument("--cargo", default=os.environ.get("CARGO", "cargo"))
     parser.add_argument("--uv", default=os.environ.get("UV", "uv"))
     parser.add_argument("--python", default=os.environ.get("KERNEL_PYTHON", "3.12"))

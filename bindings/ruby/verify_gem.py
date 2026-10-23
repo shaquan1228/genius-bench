@@ -2,7 +2,6 @@ import argparse
 import os
 from pathlib import Path
 import shutil
-import subprocess
 import sys
 import tarfile
 import tempfile
@@ -10,20 +9,8 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 PACKAGE = ROOT / "bindings/ruby"
-sys.path.insert(0, str(ROOT / "bindings/python"))
-from verify_wheel import source_identity  # noqa: E402
-
-
-def run(command, *, cwd, env=None, capture=False):
-    print("+ " + " ".join(map(str, command)), flush=True)
-    result = subprocess.run(
-        command, cwd=cwd, env=env, text=True, capture_output=capture, check=False
-    )
-    if result.returncode != 0:
-        if capture:
-            print(result.stdout, result.stderr, sep="\n", flush=True)
-        raise subprocess.CalledProcessError(result.returncode, command)
-    return result
+sys.path.insert(0, str(ROOT / "scripts"))
+from support import run, source_identity  # noqa: E402
 
 
 def gem_files(gem):
@@ -131,7 +118,9 @@ def verify(gem, ruby, bundle, native, expected_source_hash=None):
 
 
 def main():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        description="Install a built gem into an isolated gem home and verify it."
+    )
     parser.add_argument("--gem", required=True, type=Path)
     parser.add_argument("--ruby", default=os.environ.get("RUBY", "ruby"))
     parser.add_argument("--bundle", default=os.environ.get("BUNDLE", "bundle"))

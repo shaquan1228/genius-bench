@@ -1,10 +1,7 @@
 import argparse
-import hashlib
 import os
 from pathlib import Path
-import re
 import shutil
-import subprocess
 import sys
 import tempfile
 import zipfile
@@ -12,29 +9,8 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[2]
 PACKAGE = ROOT / "bindings/python"
-
-
-def run(command, *, cwd, env=None, capture=False):
-    print("+ " + " ".join(map(str, command)), flush=True)
-    return subprocess.run(
-        command, cwd=cwd, env=env, text=True, capture_output=capture, check=not capture
-    )
-
-
-def source_identity(core=None):
-    core = core or ROOT / "crates/semantic-core"
-    build = (core / "build.rs").read_text()
-    names = re.findall(
-        r'"([^"]+)"', build.split("pub const SOURCE_INPUTS:")[1].split("];", 1)[0]
-    )
-    digest = hashlib.sha256()
-    for name in names:
-        contents = (core / name).read_bytes()
-        digest.update(len(name).to_bytes(8, "little"))
-        digest.update(name.encode())
-        digest.update(len(contents).to_bytes(8, "little"))
-        digest.update(contents)
-    return digest.hexdigest()
+sys.path.insert(0, str(ROOT / "scripts"))
+from support import run, source_identity  # noqa: E402
 
 
 def verify(wheel, python, uv, offline, expected_source_hash=None):
@@ -99,7 +75,7 @@ def verify(wheel, python, uv, offline, expected_source_hash=None):
         ]
         if offline:
             export.append("--offline")
-        run(export, cwd=temporary, capture=True).check_returncode()
+        run(export, cwd=temporary, capture=True)
         run(
             [*install, "--require-hashes", "--requirements", str(requirements)],
             cwd=temporary,
@@ -138,6 +114,7 @@ def verify(wheel, python, uv, offline, expected_source_hash=None):
             cwd=temporary,
             env=clean,
             capture=True,
+            check=False,
         )
         if (
             invalid.returncode != 1
@@ -157,7 +134,9 @@ def verify(wheel, python, uv, offline, expected_source_hash=None):
 
 
 def main():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        description="Install a built wheel into a fresh environment and verify it."
+    )
     parser.add_argument("--wheel", required=True, type=Path)
     parser.add_argument("--python", default=sys.executable)
     parser.add_argument("--uv", default=os.environ.get("UV", "uv"))
