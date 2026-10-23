@@ -1,0 +1,61 @@
+name: Ruby gems
+
+on: [push, pull_request, workflow_dispatch]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: x86_64-linux
+            target: x86_64-unknown-linux-gnu
+          - platform: arm64-darwin
+            target: aarch64-apple-darwin
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+          working-directory: bindings/ruby
+      - uses: oxidize-rb/actions/cross-gem@v1
+        id: cross-gem
+        with:
+          platform: ${{ matrix.platform }}
+          ruby-versions: "3.2,3.3,3.4"
+          working-directory: bindings/ruby
+          pre-script: rustup target add ${{ matrix.target }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gem-${{ matrix.platform }}
+          path: ${{ steps.cross-gem.outputs.gem-path }}
+          if-no-files-found: error
+  install:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        ruby: ["3.2", "3.3", "3.4"]
+        platform:
+          - os: ubuntu-24.04
+            label: x86_64-linux
+          - os: macos-14
+            label: arm64-darwin
+    runs-on: ${{ matrix.platform.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ matrix.ruby }}
+          bundler-cache: true
+          working-directory: bindings/ruby
+      - uses: actions/download-artifact@v4
+        with:
+          name: gem-${{ matrix.platform.label }}
+          path: pkg
+      - run: python3 bindings/ruby/verify_gem.py --gem pkg/*.gem --native

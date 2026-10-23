@@ -1,0 +1,217 @@
+# frozen_string_literal: true
+
+RSpec.shared_examples "a frozen declaration" do
+  it { is_expected.to be_frozen }
+
+  it "rejects new instance variables" do
+    expect { subject.instance_variable_set(:@extra, 1) }.to raise_error(FrozenError)
+  end
+end
+
+RSpec.describe GeniusBench::File do
+  describe ".new" do
+    subject(:file) { described_class.new(path: "a.txt", contents: "data") }
+
+    it_behaves_like "a frozen declaration"
+    it { is_expected.to have_attributes(path: "a.txt", contents: "data") }
+
+    it "returns frozen strings" do
+      expect(file.path).to be_frozen
+    end
+
+    context "with a non-string path" do
+      it "raises TypeError" do
+        expect { described_class.new(path: 1, contents: "") }.to raise_error(TypeError)
+      end
+    end
+  end
+end
+
+RSpec.describe GeniusBench::Instruction do
+  describe ".new" do
+    subject { described_class.new(prompt: "observe") }
+
+    it_behaves_like "a frozen declaration"
+    it { is_expected.to have_attributes(prompt: "observe") }
+
+    context "with a positional prompt" do
+      it "raises ArgumentError" do
+        expect { described_class.new("observe") }.to raise_error(ArgumentError)
+      end
+    end
+
+    context "without a prompt" do
+      it "raises ArgumentError" do
+        expect { described_class.new }.to raise_error(ArgumentError)
+      end
+    end
+
+    context "with a prompt that only converts through to_str" do
+      let(:convertible) { Object.new.tap { |object| def object.to_str = "a" } }
+
+      it "raises TypeError" do
+        expect { described_class.new(prompt: convertible) }.to raise_error(TypeError)
+      end
+    end
+  end
+end
+
+RSpec.describe GeniusBench::Verifier do
+  describe ".new" do
+    subject(:verifier) do
+      described_class.new(
+        inputs: ["a.txt"],
+        files: [GeniusBench::File.new(path: "private", contents: "secret")],
+        tools: [GeniusBench::File.new(path: "tool", contents: "public")],
+        command: ["check"],
+        stdin: "secret",
+        timeout_seconds: 1
+      )
+    end
+
+    it_behaves_like "a frozen declaration"
+    it { is_expected.to have_attributes(inputs: ["a.txt"], command: ["check"], stdin: "secret", timeout_seconds: 1) }
+
+    it "exposes private files" do
+      expect(verifier.files.map(&:path)).to eq(["private"])
+    end
+
+    it "exposes public tools" do
+      expect(verifier.tools.map(&:path)).to eq(["tool"])
+    end
+
+    context "with a fractional timeout" do
+      it "raises TypeError" do
+        expect { described_class.new(inputs: [], files: [], tools: [], command: [], stdin: "", timeout_seconds: 1.9) }.to raise_error(TypeError)
+      end
+    end
+
+    context "with a file that is not a File" do
+      it "raises TypeError" do
+        expect { described_class.new(inputs: [], files: ["no"], tools: [], command: [], stdin: "", timeout_seconds: 1) }.to raise_error(TypeError)
+      end
+    end
+  end
+end
+
+RSpec.describe GeniusBench::TextRule do
+  describe ".new" do
+    subject { described_class.new(field: "reason", min_words: 1, max_words: 5) }
+
+    it_behaves_like "a frozen declaration"
+    it { is_expected.to have_attributes(field: "reason", min_words: 1, max_words: 5) }
+
+    context "with non-integer bounds" do
+      [1.5, Rational(3, 2), true, "2", nil].each do |invalid|
+        it "raises TypeError for #{invalid.inspect}" do
+          expect { described_class.new(field: "f", min_words: 0, max_words: invalid) }.to raise_error(TypeError)
+        end
+      end
+    end
+  end
+end
+
+RSpec.describe GeniusBench::Rubric do
+  describe ".new" do
+    subject(:rubric) { described_class.new(expected: [["answer", kernel(42)]], text_rule: nil) }
+
+    it_behaves_like "a frozen declaration"
+    it { is_expected.to have_attributes(text_rule: nil) }
+
+    it "exposes the expected fields" do
+      expect(scalars_of(rubric.expected)).to eq([["answer", 42]])
+    end
+
+    context "with an expected value that is not a Value" do
+      it "raises TypeError" do
+        expect { described_class.new(expected: [["answer", 1]], text_rule: nil) }.to raise_error(TypeError)
+      end
+    end
+
+    context "with a text rule" do
+      subject { described_class.new(expected: [], text_rule: GeniusBench::TextRule.new(field: "reason", min_words: 1, max_words: 5)) }
+
+      it "exposes the rule" do
+        expect(subject.text_rule.field).to eq("reason")
+      end
+    end
+  end
+end
+
+RSpec.describe GeniusBench::Criterion do
+  let(:rubric) do
+    described_class.answer(
+      rubric: GeniusBench::Rubric.new(
+        expected: [["answer", kernel(42)]],
+        text_rule: GeniusBench::TextRule.new(field: "reason", min_words: 1, max_words: 5)
+      )
+    )
+  end
+
+  describe ".answer" do
+    subject(:criterion) { rubric }
+
+    it_behaves_like "a frozen declaration"
+    it { is_expected.to have_attributes(kind: "answer", verifier: nil, predicate: nil) }
+
+    it "exposes the rubric" do
+      expect(criterion.rubric.text_rule.field).to eq("reason")
+    end
+
+    describe "#condition" do
+      subject(:condition) { criterion.condition }
+
+      it { is_expected.to have_attributes(kind: "all") }
+
+      it "checks the response, each field, and the text rule" do
+        expect(condition.checks.map(&:first)).to eq(%w[response answer text])
+      end
+
+      it "binds the text rule to the field path" do
+        expect(condition.checks[2][1].path).to eq(%w[response reason])
+      end
+
+      it "binds the text rule bounds" do
+        expect(condition.checks[2][1]).to have_attributes(min_words: 1, max_words: 5)
+      end
+    end
+  end
+
+  describe ".code" do
+    subject(:criterion) do
+      described_class.code(verifier: GeniusBench::Verifier.new(inputs: ["a"], files: [], tools: [], command: ["check"], stdin: "", timeout_seconds: 1))
+    end
+
+    it { is_expected.to have_attributes(kind: "code", rubric: nil, predicate: nil) }
+
+    it "conditions on a passed verification" do
+      expect(criterion.condition).to have_attributes(kind: "equals", path: ["verification"])
+    end
+  end
+
+  describe ".state" do
+    subject(:criterion) { described_class.state(predicate: GeniusBench::Predicate.present(path: ["response"])) }
+
+    it { is_expected.to have_attributes(kind: "state", rubric: nil, verifier: nil) }
+
+    it "conditions on the predicate" do
+      expect(criterion.condition.kind).to eq("present")
+    end
+  end
+end
+
+RSpec.describe GeniusBench::Reference do
+  describe ".new" do
+    subject(:reference) { described_class.new(edits: [GeniusBench::File.new(path: "a.txt", contents: "new")], completion: kernel("done")) }
+
+    it_behaves_like "a frozen declaration"
+
+    it "exposes the edits" do
+      expect(reference.edits.map(&:path)).to eq(["a.txt"])
+    end
+
+    it "exposes the completion" do
+      expect(reference.completion.scalar).to eq("done")
+    end
+  end
+end

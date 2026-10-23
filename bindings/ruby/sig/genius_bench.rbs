@@ -1,0 +1,174 @@
+module GeniusBench
+  VERSION: String
+  NESTING_LIMIT: Integer
+  REQUIRED_SCORES: Array[String]
+
+  def self.version: () -> String
+  def self.source_hash: () -> String
+  def self.from_struct: (value: Struct[untyped] | Data) -> Value
+
+  interface _KernelValue
+    def to_kernel_value: () -> kernel_input
+  end
+
+  type scalar = nil | bool | Integer | Float | String
+  type kernel_input = scalar | Array[kernel_input] | Hash[String | Symbol, kernel_input] | Value | Record | _KernelValue
+  type value_kind = "null" | "bool" | "int" | "float" | "string" | "list" | "record"
+  type predicate_kind = "present" | "equals" | "within" | "contains" | "words" | "all" | "any" | "not"
+  type verification_status = "unchecked" | "passed" | "failed" | "invalid_submission" | "timed_out" | "harness_error"
+  type scores = Array[[String, bool]]
+
+  class Value
+    def self.from_ruby: (value: kernel_input) -> Value
+    def kind: () -> value_kind
+    def scalar: () -> scalar
+    def items: () -> Array[Value]
+    def fields: () -> Array[[String, Value]]
+    def get: (path: Array[String]) -> Value?
+    def equal_to?: (other: Value) -> bool
+  end
+
+  class Record
+    def self.new: (fields: Array[[String, kernel_input]]) -> Record
+    def fields: () -> Array[[String, Value]]
+    def to_kernel_value: () -> Value
+  end
+
+  class Predicate
+    def self.present: (path: Array[String]) -> Predicate
+    def self.equals: (path: Array[String], expected: Value) -> Predicate
+    def self.within: (path: Array[String], allowed: Array[Value]) -> Predicate
+    def self.contains: (path: Array[String], item: Value) -> Predicate
+    def self.words: (path: Array[String], min_words: Integer, max_words: Integer) -> Predicate
+    def self.all: (checks: Array[[String, Predicate]]) -> Predicate
+    def self.any: (checks: Array[[String, Predicate]]) -> Predicate
+    def self.not: (check: Predicate) -> Predicate
+    def holds?: (observation: Value) -> bool
+    def kind: () -> predicate_kind
+    def path: () -> Array[String]?
+    def expected: () -> Value?
+    def item: () -> Value?
+    def allowed: () -> Array[Value]?
+    def min_words: () -> Integer?
+    def max_words: () -> Integer?
+    def checks: () -> Array[[String, Predicate]]
+    def check: () -> Predicate?
+  end
+
+  class Verification
+    def self.unchecked: () -> Verification
+    def self.passed: () -> Verification
+    def self.failed: () -> Verification
+    def self.invalid_submission: () -> Verification
+    def self.timed_out: () -> Verification
+    def self.harness_error: (detail: String) -> Verification
+    def status: () -> verification_status
+    def detail: () -> String?
+  end
+
+  class Outcome
+    def self.new: (changed_files: Array[String], verification: Verification, response: Value, facts: Array[[String, Value]]) -> Outcome
+    def changed_files: () -> Array[String]
+    def verification: () -> Verification
+    def response: () -> Value
+    def facts: () -> Array[[String, Value]]
+    def observation: () -> Value
+  end
+
+  class Assessment
+    def self.new: (predicate: Predicate, observation: Value) -> Assessment
+    def passed?: () -> bool
+    def observed: () -> Value?
+    def scores: () -> scores
+    def kind: () -> ("check" | "all")
+    def predicate: () -> Predicate?
+    def observation: () -> Value?
+    def checks: () -> Array[[String, Assessment]]
+  end
+
+  class File
+    def self.new: (path: String, contents: String) -> File
+    def path: () -> String
+    def contents: () -> String
+  end
+
+  class Instruction
+    def self.new: (prompt: String) -> Instruction
+    def prompt: () -> String
+  end
+
+  class Verifier
+    def self.new: (inputs: Array[String], files: Array[File], tools: Array[File], command: Array[String], stdin: String, timeout_seconds: Integer) -> Verifier
+    def inputs: () -> Array[String]
+    def files: () -> Array[File]
+    def tools: () -> Array[File]
+    def command: () -> Array[String]
+    def stdin: () -> String
+    def timeout_seconds: () -> Integer
+  end
+
+  class TextRule
+    def self.new: (field: String, min_words: Integer, max_words: Integer) -> TextRule
+    def field: () -> String
+    def min_words: () -> Integer
+    def max_words: () -> Integer
+  end
+
+  class Rubric
+    def self.new: (expected: Array[[String, Value]], text_rule: TextRule?) -> Rubric
+    def expected: () -> Array[[String, Value]]
+    def text_rule: () -> TextRule?
+  end
+
+  class Criterion
+    def self.code: (verifier: Verifier) -> Criterion
+    def self.answer: (rubric: Rubric) -> Criterion
+    def self.state: (predicate: Predicate) -> Criterion
+    def condition: () -> Predicate
+    def kind: () -> ("code" | "answer" | "state")
+    def verifier: () -> Verifier?
+    def rubric: () -> Rubric?
+    def predicate: () -> Predicate?
+  end
+
+  class Reference
+    def self.new: (edits: Array[File], completion: Value) -> Reference
+    def edits: () -> Array[File]
+    def completion: () -> Value
+  end
+
+  class Case
+    def case_id: () -> String
+    def prompt: () -> String
+    def files: () -> Array[File]
+  end
+
+  class Issue
+    def field: () -> String
+    def message: () -> String
+  end
+
+  class ValidationError < ArgumentError
+    def case_id: () -> String?
+    def issues: () -> Array[Issue]
+  end
+
+  class GradingError < RuntimeError
+    def failure: () -> "verification_harness_error"
+    def detail: () -> String
+  end
+
+  class Task
+    def self.new: (id: String, fixture: Array[File], instruction: Instruction, criterion: Criterion, allowed_files: Array[String], reference: Reference) -> Task
+    def id: () -> String
+    def fixture: () -> Array[File]
+    def instruction: () -> Instruction
+    def criterion: () -> Criterion
+    def allowed_files: () -> Array[String]
+    def reference: () -> Reference
+    def project: () -> Case
+    def checks: () -> Verifier?
+    def assess: (outcome: Outcome) -> Assessment
+    def grade: (outcome: Outcome) -> scores
+  end
+end

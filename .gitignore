@@ -1,4 +1,4 @@
-/target/
+target/
 __pycache__/
 *.pyc
 .venv/
@@ -6,3 +6,8 @@ __pycache__/
 .mypy_cache/
 *.so
 /bindings/python/dist/
+*.bundle
+/bindings/ruby/tmp/
+/bindings/ruby/pkg/
+/bindings/ruby/LICENSE
+/bindings/ruby/.rspec_status
