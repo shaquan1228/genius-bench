@@ -3,7 +3,7 @@
 require_relative "genius_bench/version"
 
 versioned = File.join(__dir__, "genius_bench", RUBY_VERSION[/\d+\.\d+/], "semantic_ruby")
-require_relative File.exist?("#{versioned}.#{RbConfig::CONFIG['DLEXT']}") ? versioned : "genius_bench/semantic_ruby"
+require_relative File.exist?("#{versioned}.#{RbConfig::CONFIG["DLEXT"]}") ? versioned : "genius_bench/semantic_ruby"
 
 module GeniusBench
   def self.from_struct(value:)
