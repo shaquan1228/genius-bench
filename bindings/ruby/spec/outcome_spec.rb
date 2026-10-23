@@ -26,13 +26,13 @@ RSpec.describe GeniusBench::Outcome do
       expect(scalars_of(outcome.facts)).to eq([["extra", true]])
     end
 
-    context "with a verification that is not a Verification" do
+    context "with a verification that is not a Verification", contract: true do
       it "raises TypeError" do
         expect { build_outcome(verification: :unchecked) }.to raise_error(TypeError)
       end
     end
 
-    context "with a fact value that is not a Value" do
+    context "with a fact value that is not a Value", contract: true do
       let(:facts) { [["response", nil]] }
 
       it "raises TypeError" do
@@ -40,7 +40,7 @@ RSpec.describe GeniusBench::Outcome do
       end
     end
 
-    context "with a fact that is not a pair" do
+    context "with a fact that is not a pair", contract: true do
       let(:facts) { [["response"]] }
 
       it "raises TypeError" do
@@ -49,7 +49,7 @@ RSpec.describe GeniusBench::Outcome do
     end
 
     context "with facts as a Hash" do
-      let(:facts) { { extra: kernel(true) } }
+      let(:facts) { {extra: kernel(true)} }
 
       it "names the facts" do
         expect(scalars_of(outcome.facts)).to eq([["extra", true]])

@@ -110,7 +110,11 @@ RSpec.describe GeniusBench::Task do
           )
         end
       end
-      let(:error) { invalid.call rescue $! }
+      let(:error) do
+        invalid.call
+      rescue GeniusBench::ValidationError => error
+        error
+      end
 
       it "raises ValidationError" do
         expect { invalid.call }.to raise_error(GeniusBench::ValidationError)
@@ -149,7 +153,7 @@ RSpec.describe GeniusBench::Task do
       end
     end
 
-    context "with a fixture entry that is not a SourceFile" do
+    context "with a fixture entry that is not a SourceFile", contract: true do
       let(:fixture) { ["no"] }
 
       it "raises TypeError" do
@@ -161,7 +165,7 @@ RSpec.describe GeniusBench::Task do
   describe "#grade" do
     subject(:task) { state_task }
 
-    let(:graded) { build_outcome(response: kernel({ "answer" => 42 }), facts: [["response", kernel(nil)]]) }
+    let(:graded) { build_outcome(response: kernel({"answer" => 42}), facts: [["response", kernel(nil)]]) }
 
     it "scores correctness and scope" do
       expect(task.grade(outcome: graded)).to eq([["correctness", true], ["scope", true]])
@@ -175,7 +179,7 @@ RSpec.describe GeniusBench::Task do
       expect(task.grade(outcome: graded)[0]).to be_frozen
     end
 
-    it "requires the outcome keyword" do
+    it "requires the outcome keyword", contract: true do
       expect { task.grade(graded) }.to raise_error(ArgumentError)
     end
 
@@ -191,22 +195,31 @@ RSpec.describe GeniusBench::Task do
 
     context "when the harness failed" do
       let(:outcome) { build_outcome(verification: GeniusBench::Verification.harness_error(detail: "worker missing")) }
-      let(:error) { task.grade(outcome: outcome) rescue $! }
+      let(:error) do
+        task.grade(outcome: outcome)
+      rescue GeniusBench::GradingError => error
+        error
+      end
 
       it "raises GradingError" do
         expect { task.grade(outcome: outcome) }.to raise_error(GeniusBench::GradingError)
       end
 
-      it { expect(error.detail).to eq("worker missing") }
-      it { expect(error.failure).to eq("verification_harness_error") }
-      it { expect(error.message).to eq("Verification harness error: worker missing") }
+      it "retains the failure name and detail" do
+        expect(error).to have_attributes(failure: "verification_harness_error", detail: "worker missing")
+      end
+
+      it "formats the message from the detail" do
+        expect(error.message).to eq("Verification harness error: worker missing")
+      end
     end
 
-    context "under garbage collector stress" do
+    context "when the garbage collector is stressed" do
       subject(:task) { state_task(predicate: GeniusBench::Predicate.all(checks: checks)) }
 
       let(:checks) { Array.new(20) { |index| [index.to_s, GeniusBench::Predicate.present(path: ["response"])] } }
-      let(:entries) { Array.new(20) { |index| { "index" => index, "text" => "entry #{index}" } } }
+      let(:entries) { Array.new(20) { |index| {"index" => index, "text" => "entry #{index}"} } }
+      let(:assessment) { task.assess(outcome: build_outcome(response: kernel({"answer" => 42}))) }
 
       around do |example|
         GC.stress = true
@@ -216,16 +229,14 @@ RSpec.describe GeniusBench::Task do
       end
 
       it "grades correctly" do
-        expect(task.grade(outcome: build_outcome(response: kernel({ "answer" => 42 })))).to eq([["correctness", true], ["scope", true]])
+        expect(task.grade(outcome: build_outcome(response: kernel({"answer" => 42})))).to eq([["correctness", true], ["scope", true]])
       end
 
       it "converts nested records intact" do
-        converted = kernel(entries).items.map { |item| scalars_of(item.fields) }
-        expect(converted.last).to eq([["index", 19], ["text", "entry 19"]])
+        expect(kernel(entries).items.map { |item| scalars_of(item.fields) }.last).to eq([["index", 19], ["text", "entry 19"]])
       end
 
       it "exposes assessment checks intact" do
-        assessment = task.assess(outcome: build_outcome(response: kernel({ "answer" => 42 })))
         expect(assessment.checks[0][1].checks.map(&:first)).to eq(Array.new(20, &:to_s))
       end
     end
@@ -235,10 +246,10 @@ RSpec.describe GeniusBench::Task do
     subject(:task) { state_task }
 
     it "returns a passing assessment for a matching response" do
-      expect(task.assess(outcome: build_outcome(response: kernel({ "answer" => 42 })))).to be_passed
+      expect(task.assess(outcome: build_outcome(response: kernel({"answer" => 42})))).to be_passed
     end
 
-    it "requires the outcome keyword" do
+    it "requires the outcome keyword", contract: true do
       expect { task.assess(build_outcome) }.to raise_error(ArgumentError)
     end
   end

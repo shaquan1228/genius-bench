@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 RSpec.describe GeniusBench::Predicate do
-  let(:observation) { kernel({ "present" => 1, "null" => nil, "list" => [1, "x"], "nested" => { "k" => nil }, "t" => text }) }
+  let(:observation) { kernel({"present" => 1, "null" => nil, "list" => [1, "x"], "nested" => {"k" => nil}, "t" => text}) }
   let(:text) { "one two" }
 
   describe ".present" do
@@ -26,19 +26,19 @@ RSpec.describe GeniusBench::Predicate do
       it("does not hold") { is_expected.not_to be_holds(observation: observation) }
     end
 
-    context "with a non-string path element" do
+    context "with a non-string path element", contract: true do
       it "raises TypeError" do
         expect { described_class.present(path: [1]) }.to raise_error(TypeError)
       end
     end
 
-    context "with a path that is not an array" do
+    context "with a path that is not an array", contract: true do
       it "raises TypeError" do
         expect { described_class.present(path: "a") }.to raise_error(TypeError)
       end
     end
 
-    context "with a path element that only converts through to_str" do
+    context "with a path element that only converts through to_str", contract: true do
       let(:convertible) { Object.new.tap { |object| def object.to_str = "a" } }
 
       it "raises TypeError" do
@@ -140,7 +140,7 @@ RSpec.describe GeniusBench::Predicate do
       it { is_expected.to have_attributes(max_words: 2**40) }
     end
 
-    context "with non-integer bounds" do
+    context "with non-integer bounds", contract: true do
       [1.5, Rational(3, 2), true, "2", nil].each do |invalid|
         it "raises TypeError for #{invalid.inspect}" do
           expect { described_class.words(path: [], min_words: invalid, max_words: 2) }.to raise_error(TypeError)
@@ -148,7 +148,7 @@ RSpec.describe GeniusBench::Predicate do
       end
     end
 
-    context "with a bound that only converts through to_int" do
+    context "with a bound that only converts through to_int", contract: true do
       let(:convertible) { Object.new.tap { |object| def object.to_int = 1 } }
 
       it "raises TypeError" do
@@ -183,7 +183,7 @@ RSpec.describe GeniusBench::Predicate do
       end
     end
 
-    context "with a check that is not a predicate" do
+    context "with a check that is not a predicate", contract: true do
       let(:checks) { [["one", 1]] }
 
       it "raises TypeError" do
@@ -192,7 +192,7 @@ RSpec.describe GeniusBench::Predicate do
     end
 
     context "with a Hash of checks keyed by symbols" do
-      let(:checks) { { one: described_class.present(path: ["present"]), two: described_class.present(path: ["null"]) } }
+      let(:checks) { {one: described_class.present(path: ["present"]), two: described_class.present(path: ["null"])} }
 
       it "names the checks in entry order" do
         expect(predicate.checks.map(&:first)).to eq(%w[one two])
@@ -227,26 +227,28 @@ RSpec.describe GeniusBench::Predicate do
   end
 
   %w[not all any].each do |operator|
-    describe "nesting through .#{operator}" do
+    describe ".#{operator}" do
       let(:wrap) do
         lambda do |inner|
-          operator == "not" ? described_class.not(check: inner) : described_class.public_send(operator, checks: [["x", inner]])
+          (operator == "not") ? described_class.not(check: inner) : described_class.public_send(operator, checks: [["x", inner]])
         end
       end
       let(:deepest) { (1..255).reduce(described_class.present(path: [])) { |inner, _| wrap.call(inner) } }
 
-      it "accepts 256 levels" do
-        expect(GeniusBench::Assessment.new(predicate: deepest, observation: kernel(1)).passed?).to eq(operator != "not")
-      end
+      context "when nested to the limit" do
+        it "accepts #{GeniusBench::NESTING_LIMIT} levels" do
+          expect(GeniusBench::Assessment.new(predicate: deepest, observation: kernel(1)).passed?).to eq(operator != "not")
+        end
 
-      it "rejects 257 levels" do
-        expect { wrap.call(deepest) }.to raise_error(ArgumentError, /nesting/)
+        it "rejects one more level" do
+          expect { wrap.call(deepest) }.to raise_error(ArgumentError, /nesting/)
+        end
       end
     end
   end
 
   describe "#holds?" do
-    it "requires the observation keyword" do
+    it "requires the observation keyword", contract: true do
       expect { described_class.present(path: []).holds?(observation) }.to raise_error(ArgumentError)
     end
   end

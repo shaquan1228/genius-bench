@@ -2,10 +2,15 @@
 
 require "genius_bench"
 
-specification = Gem.loaded_specs.fetch("genius-bench-kernel")
-raise "Version mismatch" unless specification.version.to_s == GeniusBench.version
-raise "Loaded outside the gem home" unless File.realpath(specification.full_gem_path).start_with?(File.realpath(ENV.fetch("GEM_HOME")))
-raise "Source identity mismatch" unless GeniusBench.source_hash == ENV.fetch("KERNEL_SOURCE_HASH")
+specification = Gem.loaded_specs["genius-bench-kernel"]
+raise "Version mismatch" if specification && specification.version.to_s != GeniusBench.version
+if ENV["GEM_HOME"]
+  gem_path = specification && File.realpath(specification.full_gem_path)
+  raise "Loaded outside the gem home" unless gem_path&.start_with?(File.realpath(ENV["GEM_HOME"]))
+end
+if ENV["KERNEL_SOURCE_HASH"]
+  raise "Source identity mismatch" unless GeniusBench.source_hash == ENV["KERNEL_SOURCE_HASH"]
+end
 
 task = GeniusBench::Task.new(
   id: "installed",

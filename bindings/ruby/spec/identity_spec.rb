@@ -34,7 +34,7 @@ RSpec.describe "value identity" do
   end
 
   {
-    GeniusBench::Value => -> { GeniusBench::Value.from_ruby(value: { "x" => [1, 2.5] }) },
+    GeniusBench::Value => -> { GeniusBench::Value.from_ruby(value: {"x" => [1, 2.5]}) },
     GeniusBench::Record => -> { GeniusBench::Record.new(fields: [["x", 1], ["x", 2]]) },
     GeniusBench::Predicate => -> { GeniusBench::Predicate.words(path: ["t"], min_words: 1, max_words: 2) },
     GeniusBench::Verification => -> { GeniusBench::Verification.harness_error(detail: "lost") },

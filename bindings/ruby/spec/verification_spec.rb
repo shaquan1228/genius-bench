@@ -15,7 +15,7 @@ RSpec.describe GeniusBench::Verification do
 
     it { is_expected.to have_attributes(status: "harness_error", detail: "worker missing") }
 
-    context "with a non-string detail" do
+    context "with a non-string detail", contract: true do
       it "raises TypeError" do
         expect { described_class.harness_error(detail: 1) }.to raise_error(TypeError)
       end
