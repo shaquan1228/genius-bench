@@ -31,64 +31,14 @@ Ruby loads the same core as `GeniusBench` from the `genius-bench-kernel` gem:
 gem install path/to/genius-bench-kernel-0.1.0-arm64-darwin.gem
 ```
 
-```ruby
-require "genius_bench"
+Keyword constructors, frozen snapshots, structured `ValidationError` and
+`GradingError`, the `to_kernel_value` protocol, `GeniusBench.from_struct`, and
+checked `sig/genius_bench.rbs` declarations mirror the Python package. Platform
+gems for Linux x86_64 and macOS arm64 on Ruby 3.2 through 3.4 install without
+Rust; the source gem vendors the core and needs Rust at install time.
 
-task = GeniusBench::Task.new(
-  id: "answer",
-  fixture: [],
-  instruction: GeniusBench::Instruction.new(prompt: "What is six times seven?"),
-  criterion: GeniusBench::Criterion.answer(
-    rubric: GeniusBench::Rubric.new(
-      expected: [["answer", GeniusBench::Value.from_ruby(value: 42)]], text_rule: nil
-    )
-  ),
-  allowed_files: [],
-  reference: GeniusBench::Reference.new(
-    edits: [], completion: GeniusBench::Value.from_ruby(value: { "answer" => 42 })
-  )
-)
-outcome = GeniusBench::Outcome.new(
-  changed_files: [],
-  verification: GeniusBench::Verification.unchecked,
-  response: GeniusBench::Value.from_ruby(value: { "answer" => 42 }),
-  facts: []
-)
-task.grade(outcome: outcome) # => [["correctness", true], ["scope", true]]
-```
-
-Keyword constructors, frozen snapshots, `ValidationError` (an `ArgumentError`
-with `case_id` and `issues`), `GradingError` (a `RuntimeError` with `failure` and
-`detail`), the `to_kernel_value` protocol, `GeniusBench.from_struct`, and
-checked `sig/genius_bench.rbs` declarations mirror the Python package.
-`Value.from_ruby(value:)` accepts nil, booleans, 64-bit integers, floats,
-UTF-8-compatible strings, arrays, string- or symbol-keyed hashes whose names
-are distinct after symbol conversion, native values, and objects responding to
-`to_kernel_value`; `Record.new(fields:)` keeps duplicate names. Declaration
-inputs are strict: integers and strings are not coerced through `to_int` or
-`to_str`. Kinds, statuses, and failure names are frozen strings, as in Python.
-`Value#equal_to?(other:)` is semantic equality; Ruby's `equal?` keeps its
-identity meaning.
-Platform gems built by `rake native gem` install and grade without Rust; the
-source gem built by `rake gem:source` vendors the semantic core and requires
-Rust, libclang, and rb_sys at install time. `GeniusBench.version` and `GeniusBench.source_hash` report
-the installed core's identity.
-
-CI cross-compiles platform gems with rb-sys-dock and installs each one on the
-matching runner across Ruby 3.2, 3.3, and 3.4:
-
-| Platform | Gem platform | Compiled Ruby ABIs | Installed on |
-| --- | --- | --- | --- |
-| Linux x86_64, glibc | x86_64-linux | 3.2, 3.3, 3.4 | ubuntu-24.04 |
-| macOS arm64 | arm64-darwin | 3.2, 3.3, 3.4 | macos-14 |
-
-The minimum glibc and macOS versions are those of the rb-sys-dock images for
-rb_sys 0.9.130; the install matrix is the verified floor. Other Rubies, musl
-Linux, and other architectures install from the source gem with Rust present.
-No gem is published to a registry.
-
-For development, install Rust from `rust-toolchain.toml`, uv, CPython 3.12, and
-Ruby 3.3 from `.tool-versions`:
+For development, install Rust from `rust-toolchain.toml`, Ruby 3.3 from
+`.tool-versions`, uv, and CPython 3.12:
 
 ```sh
 cargo fetch --locked
@@ -101,15 +51,13 @@ make install-hooks
 
 `make check` runs Rust checks, verifies a fresh wheel installation built from
 an extracted source distribution, including boundary and type checks, then
-compiles the Ruby extension, runs its RSpec suite, validates
-the RBS declarations, and installs the source and host platform gems into an
-isolated gem home; the platform gem installs and both gems grade with no
-compiler on the subprocess `PATH`. The extension crate is its own cargo
-workspace under `bindings/ruby`, so core and Python checks need neither Ruby
-nor libclang. The source gem
-lock is checked as a subset of the workspace lock, and the vendored core bytes
-and the single extension manifest path edit are checked against the checkout.
+lints, compiles, and tests the Ruby extension, checks its RBS declarations
+statically and at runtime, and installs the source and host platform gems into
+an isolated gem home where both grade with no compiler on the subprocess
+`PATH`. `make clean` removes build output.
 
-See the [Python package guide](bindings/python/README.md) for API examples,
-adapters, supported platforms, source identity, and packaging procedures, and
-[CONTRIBUTING.md](CONTRIBUTING.md) for contributor rules.
+See the [Python package guide](bindings/python/README.md) and the
+[Ruby gem guide](bindings/ruby/README.md) for API examples, adapters,
+supported platforms, source identity, and packaging procedures;
+[CONTRIBUTING.md](CONTRIBUTING.md) for contributor rules; and
+[CHANGELOG.md](CHANGELOG.md) for release notes.
