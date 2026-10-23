@@ -111,7 +111,5 @@ lock is checked as a subset of the workspace lock, and the vendored core bytes
 and the single extension manifest path edit are checked against the checkout.
 
 See the [Python package guide](bindings/python/README.md) for API examples,
-adapters, supported platforms, source identity, and packaging procedures;
-[CONTRIBUTING.md](CONTRIBUTING.md) for contributor rules; and the
-[extraction plan](docs/plans/2026-10-22-semantic-kernel-extraction-plan.md)
-for deliverables and verification gates.
+adapters, supported platforms, source identity, and packaging procedures, and
+[CONTRIBUTING.md](CONTRIBUTING.md) for contributor rules.

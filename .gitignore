@@ -11,3 +11,4 @@ __pycache__/
 /bindings/ruby/pkg/
 /bindings/ruby/LICENSE
 /bindings/ruby/.rspec_status
+docs/
