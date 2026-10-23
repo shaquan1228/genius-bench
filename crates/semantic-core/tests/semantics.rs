@@ -1,6 +1,7 @@
 use semantic_core::{
-    Assessment, Case, Criterion, File, GradingFailure, Instruction, Outcome, Predicate,
-    REQUIRED_SCORES, Reference, Rubric, SOURCE_HASH, Task, VERSION, Value, Verification, Verifier,
+    Assessment, Case, Criterion, File, GradingFailure, Instruction, NESTING_LIMIT, Outcome,
+    Predicate, REQUIRED_SCORES, Reference, Rubric, SOURCE_HASH, Task, VERSION, Value, Verification,
+    Verifier,
 };
 use std::{
     fs,
@@ -354,7 +355,34 @@ fn harness_failure_retains_detail() {
         detail: "transport disconnected".into(),
     };
     assert_eq!(task.assess(&outcome), Err(expected.clone()));
-    assert_eq!(task.grade(&outcome), Err(expected));
+    assert_eq!(task.grade(&outcome), Err(expected.clone()));
+    assert_eq!(expected.kind(), "verification_harness_error");
+}
+
+#[test]
+fn nesting_depth_counts_containers_and_predicate_nodes() {
+    assert_eq!(NESTING_LIMIT, 256);
+    assert_eq!(Value::Int(1).nesting_depth(), 0);
+    assert_eq!(Value::List(vec![]).nesting_depth(), 1);
+    let record = Value::Record(vec![("a".into(), Value::List(vec![Value::Null]))]);
+    assert_eq!(record.nesting_depth(), 2);
+    let deep = (0..NESTING_LIMIT).fold(Value::Null, |inner, _| Value::List(vec![inner]));
+    assert_eq!(deep.nesting_depth(), NESTING_LIMIT);
+    let leaf = Predicate::Present { path: vec![] };
+    assert_eq!(leaf.nesting_depth(), 1);
+    let nested = Predicate::All {
+        checks: vec![(
+            "x".into(),
+            Predicate::Not {
+                check: Box::new(leaf.clone()),
+            },
+        )],
+    };
+    assert_eq!(nested.nesting_depth(), 3);
+    let deep = (0..NESTING_LIMIT).fold(leaf, |inner, _| Predicate::Not {
+        check: Box::new(inner),
+    });
+    assert_eq!(deep.nesting_depth(), NESTING_LIMIT + 1);
 }
 
 #[test]

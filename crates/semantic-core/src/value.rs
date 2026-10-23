@@ -34,6 +34,25 @@ impl Value {
         Some(current)
     }
 
+    pub fn nesting_depth(&self) -> usize {
+        let mut deepest = 0;
+        let mut pending = vec![(self, 0)];
+        while let Some((value, depth)) = pending.pop() {
+            match value {
+                Self::List(items) => {
+                    deepest = deepest.max(depth + 1);
+                    pending.extend(items.iter().map(|item| (item, depth + 1)));
+                }
+                Self::Record(fields) => {
+                    deepest = deepest.max(depth + 1);
+                    pending.extend(fields.iter().map(|(_, item)| (item, depth + 1)));
+                }
+                _ => {}
+            }
+        }
+        deepest
+    }
+
     pub fn equal(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Null, Self::Null) => true,

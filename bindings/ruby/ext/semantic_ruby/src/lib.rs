@@ -10,8 +10,6 @@ use magnus::{
 use semantic_core as core;
 use std::collections::HashSet;
 
-const LIMIT: usize = 256;
-
 static VALIDATION_ERROR: Lazy<ExceptionClass> =
     Lazy::new(|ruby| error_class(ruby, "ValidationError"));
 static GRADING_ERROR: Lazy<ExceptionClass> = Lazy::new(|ruby| error_class(ruby, "GradingError"));
@@ -39,10 +37,10 @@ fn unexpected(ruby: &Ruby, expected: &str, value: RValue) -> Error {
 }
 
 fn check_depth(ruby: &Ruby, depth: usize, kind: &str) -> Result<(), Error> {
-    if depth > LIMIT {
+    if depth > core::NESTING_LIMIT {
         Err(argument_error(
             ruby,
-            format!("{kind} nesting exceeds {LIMIT} levels"),
+            format!("{kind} nesting exceeds {} levels", core::NESTING_LIMIT),
         ))
     } else {
         Ok(())
@@ -50,21 +48,7 @@ fn check_depth(ruby: &Ruby, depth: usize, kind: &str) -> Result<(), Error> {
 }
 
 fn check_value_depth(ruby: &Ruby, value: &core::Value, depth: usize) -> Result<(), Error> {
-    let mut pending = vec![(value, depth)];
-    while let Some((value, depth)) = pending.pop() {
-        match value {
-            core::Value::List(items) => {
-                check_depth(ruby, depth + 1, "Kernel value")?;
-                pending.extend(items.iter().map(|item| (item, depth + 1)));
-            }
-            core::Value::Record(fields) => {
-                check_depth(ruby, depth + 1, "Kernel value")?;
-                pending.extend(fields.iter().map(|(_, item)| (item, depth + 1)));
-            }
-            _ => {}
-        }
-    }
-    Ok(())
+    check_depth(ruby, depth + value.nesting_depth(), "Kernel value")
 }
 
 fn check_predicate_depth(
@@ -72,18 +56,7 @@ fn check_predicate_depth(
     predicate: &core::Predicate,
     depth: usize,
 ) -> Result<(), Error> {
-    let mut pending = vec![(predicate, depth)];
-    while let Some((predicate, depth)) = pending.pop() {
-        check_depth(ruby, depth + 1, "Predicate")?;
-        match predicate {
-            core::Predicate::All { checks } | core::Predicate::Any { checks } => {
-                pending.extend(checks.iter().map(|(_, check)| (check, depth + 1)));
-            }
-            core::Predicate::Not { check } => pending.push((check, depth + 1)),
-            _ => {}
-        }
-    }
-    Ok(())
+    check_depth(ruby, depth + predicate.nesting_depth(), "Predicate")
 }
 
 fn required<T: ScanArgsRequired>(args: &[RValue], names: &[&str]) -> Result<T, Error> {
@@ -1058,7 +1031,7 @@ fn grading_error(ruby: &Ruby, failure: core::GradingFailure) -> Error {
     let build = || -> Result<Error, Error> {
         let exception = class.new_instance((message.as_str(),))?;
         let object = RObject::try_convert(exception.as_value())?;
-        object.ivar_set("@failure", string(ruby, "verification_harness_error"))?;
+        object.ivar_set("@failure", string(ruby, failure.kind()))?;
         object.ivar_set("@detail", string(ruby, detail))?;
         Ok(exception.into())
     };
@@ -1339,6 +1312,7 @@ fn init(ruby: &Ruby) -> Result<(), Error> {
     task.define_method("assess", method!(task_assess, -1))?;
     task.define_method("grade", method!(task_grade, -1))?;
 
+    module.const_set("NESTING_LIMIT", core::NESTING_LIMIT)?;
     module.const_set(
         "REQUIRED_SCORES",
         array(

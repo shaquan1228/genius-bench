@@ -37,6 +37,14 @@ pub enum GradingFailure {
     VerificationHarnessError { detail: String },
 }
 
+impl GradingFailure {
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Self::VerificationHarnessError { .. } => "verification_harness_error",
+        }
+    }
+}
+
 impl fmt::Display for GradingFailure {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

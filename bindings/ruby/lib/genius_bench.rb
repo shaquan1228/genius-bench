@@ -6,8 +6,6 @@ versioned = File.join(__dir__, "genius_bench", RUBY_VERSION[/\d+\.\d+/], "semant
 require_relative File.exist?("#{versioned}.#{RbConfig::CONFIG['DLEXT']}") ? versioned : "genius_bench/semantic_ruby"
 
 module GeniusBench
-  NESTING_LIMIT = 256
-
   def self.from_struct(value:)
     raise TypeError, "Expected a Struct or Data instance" unless value.is_a?(Struct) || value.is_a?(Data)
 

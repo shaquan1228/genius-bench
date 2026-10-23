@@ -49,6 +49,22 @@ impl Predicate {
         }
     }
 
+    pub fn nesting_depth(&self) -> usize {
+        let mut deepest = 0;
+        let mut pending = vec![(self, 1)];
+        while let Some((predicate, depth)) = pending.pop() {
+            deepest = deepest.max(depth);
+            match predicate {
+                Self::All { checks } | Self::Any { checks } => {
+                    pending.extend(checks.iter().map(|(_, check)| (check, depth + 1)));
+                }
+                Self::Not { check } => pending.push((check.as_ref(), depth + 1)),
+                _ => {}
+            }
+        }
+        deepest
+    }
+
     pub fn holds(&self, observation: &Value) -> bool {
         match self {
             Self::Present { path } => observation

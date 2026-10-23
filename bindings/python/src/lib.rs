@@ -12,9 +12,10 @@ fn tuple<'py, T: IntoPyObject<'py>>(py: Python<'py>, items: Vec<T>) -> PyResult<
 }
 
 fn check_depth(depth: usize, kind: &str) -> PyResult<()> {
-    if depth > 256 {
+    if depth > core::NESTING_LIMIT {
         Err(PyValueError::new_err(format!(
-            "{kind} nesting exceeds 256 levels"
+            "{kind} nesting exceeds {} levels",
+            core::NESTING_LIMIT
         )))
     } else {
         Ok(())
@@ -22,36 +23,11 @@ fn check_depth(depth: usize, kind: &str) -> PyResult<()> {
 }
 
 fn check_value_depth(value: &core::Value, depth: usize) -> PyResult<()> {
-    let mut pending = vec![(value, depth)];
-    while let Some((value, depth)) = pending.pop() {
-        match value {
-            core::Value::List(items) => {
-                check_depth(depth + 1, "Kernel value")?;
-                pending.extend(items.iter().map(|item| (item, depth + 1)));
-            }
-            core::Value::Record(fields) => {
-                check_depth(depth + 1, "Kernel value")?;
-                pending.extend(fields.iter().map(|(_, item)| (item, depth + 1)));
-            }
-            _ => {}
-        }
-    }
-    Ok(())
+    check_depth(depth + value.nesting_depth(), "Kernel value")
 }
 
 fn check_predicate_depth(predicate: &core::Predicate, depth: usize) -> PyResult<()> {
-    let mut pending = vec![(predicate, depth)];
-    while let Some((predicate, depth)) = pending.pop() {
-        check_depth(depth + 1, "Predicate")?;
-        match predicate {
-            core::Predicate::All { checks } | core::Predicate::Any { checks } => {
-                pending.extend(checks.iter().map(|(_, check)| (check, depth + 1)));
-            }
-            core::Predicate::Not { check } => pending.push((check, depth + 1)),
-            _ => {}
-        }
-    }
-    Ok(())
+    check_depth(depth + predicate.nesting_depth(), "Predicate")
 }
 
 fn sequence_snapshot<'py>(value: &Bound<'py, PyAny>) -> PyResult<Vec<Bound<'py, PyAny>>> {
@@ -837,11 +813,10 @@ fn validation_error(py: Python<'_>, failure: core::ValidationFailure) -> PyErr {
 
 fn grading_error(py: Python<'_>, failure: core::GradingFailure) -> PyErr {
     let error = GradingError::new_err(failure.to_string());
+    let kind = failure.kind();
     let core::GradingFailure::VerificationHarnessError { detail } = failure;
     let result = (|| -> PyResult<()> {
-        error
-            .value(py)
-            .setattr("failure", "verification_harness_error")?;
+        error.value(py).setattr("failure", kind)?;
         error.value(py).setattr("detail", detail)?;
         Ok(())
     })();
