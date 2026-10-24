@@ -242,6 +242,35 @@ RSpec.describe GeniusBench::Task do
     end
   end
 
+  describe "#grade_reference" do
+    subject(:task) do
+      state_task(
+        predicate: GeniusBench::Predicate.equals(
+          path: ["changed_files"],
+          expected: kernel(["solution.py"])
+        ),
+        completion: true,
+        edits: [GeniusBench::SourceFile.new(path: "solution.py", contents: "updated")],
+        allowed_files: ["solution.py"]
+      )
+    end
+
+    it "grades the stored reference" do
+      expect(task.grade_reference(verification: GeniusBench::Verification.unchecked)).to eq(
+        [["correctness", true], ["scope", true]]
+      )
+    end
+
+    it "preserves harness failures" do
+      verification = GeniusBench::Verification.harness_error(detail: "worker missing")
+      expect { task.grade_reference(verification: verification) }.to raise_error(GeniusBench::GradingError)
+    end
+
+    it "requires the verification keyword", contract: true do
+      expect { task.grade_reference(GeniusBench::Verification.unchecked) }.to raise_error(ArgumentError)
+    end
+  end
+
   describe "#assess" do
     subject(:task) { state_task }
 

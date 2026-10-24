@@ -181,7 +181,7 @@ module GeniusBench
   end
 
   class Reference
-    def self.new: (edits: Array[SourceFile], completion: Value) -> Reference
+    def self.new: (edits: Array[SourceFile], completion: kernel_input) -> Reference
     def edits: () -> Array[SourceFile]
     def completion: () -> Value
     def ==: (untyped other) -> bool
@@ -231,6 +231,7 @@ module GeniusBench
     def checks: () -> Verifier?
     def assess: (outcome: Outcome) -> Assessment
     def grade: (outcome: Outcome) -> scores
+    def grade_reference: (verification: Verification) -> scores
     def ==: (untyped other) -> bool
     def eql?: (untyped other) -> bool
     def hash: () -> Integer

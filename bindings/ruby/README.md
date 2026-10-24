@@ -21,7 +21,7 @@ task = GeniusBench::Task.new(
   ),
   allowed_files: [],
   reference: GeniusBench::Reference.new(
-    edits: [], completion: GeniusBench::Value.from_ruby(value: {"answer" => 42})
+    edits: [], completion: {"answer" => 42}
   )
 )
 outcome = GeniusBench::Outcome.new(
@@ -33,6 +33,7 @@ outcome = GeniusBench::Outcome.new(
 assessment = task.assess(outcome: outcome)
 assessment.passed? # => true
 task.grade(outcome: outcome) # => [["correctness", true], ["scope", true]]
+task.grade_reference(verification: GeniusBench::Verification.unchecked) # => [["correctness", true], ["scope", true]]
 ```
 
 `Criterion.code(verifier:)` declares executable verification;
@@ -40,14 +41,20 @@ task.grade(outcome: outcome) # => [["correctness", true], ["scope", true]]
 harness executes the verifier and supplies its `Verification` status.
 `REQUIRED_SCORES` and `NESTING_LIMIT` come from the core.
 
+`Reference.new(completion:)` accepts native Ruby values and converts them to
+an immutable kernel `Value`. `Task#grade_reference(verification:)` grades the
+reference edits and completion after the harness supplies a verification status.
+
 ## Values
 
-`Value.from_ruby(value:)` is the explicit host-value boundary. It accepts nil,
-booleans, 64-bit integers, floats, UTF-8-compatible strings, arrays, hashes
-with String or Symbol names, native values, and objects responding to
-`to_kernel_value`. Names must be distinct after Symbol conversion. Integers and
-strings are not coerced through `to_int` or `to_str`. Cycles and nesting beyond
-`NESTING_LIMIT` raise `ArgumentError`; unsupported objects raise `TypeError`.
+`Reference.new(completion:)` accepts native Ruby values directly. Use
+`Value.from_ruby(value:)` to explicitly convert values for other binding inputs.
+It accepts nil, booleans, 64-bit integers, floats, UTF-8-compatible strings,
+arrays, hashes with String or Symbol names, native values, and objects
+responding to `to_kernel_value`. Names must be distinct after Symbol conversion.
+Integers and strings are not coerced through `to_int` or `to_str`. Cycles and
+nesting beyond `NESTING_LIMIT` raise `ArgumentError`; unsupported objects raise
+`TypeError`.
 
 `Record.new(fields:)` keeps duplicate names. `GeniusBench.from_struct(value:)`
 projects `Struct` and `Data` instances, including nested ones.

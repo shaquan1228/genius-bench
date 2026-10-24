@@ -13,7 +13,7 @@ task = k.Task(
     instruction=k.Instruction(prompt="observe"),
     criterion=k.Criterion.state(predicate=k.Predicate.present(path=["response"])),
     allowed_files=[],
-    reference=k.Reference(edits=[], completion=k.Value.from_python(value=None)),
+    reference=k.Reference(edits=[], completion=True),
 )
 outcome = k.Outcome(
     changed_files=[],
@@ -22,4 +22,8 @@ outcome = k.Outcome(
     facts=[],
 )
 assert task.grade(outcome=outcome) == (("correctness", True), ("scope", True))
+assert task.grade_reference(verification=k.Verification.unchecked()) == (
+    ("correctness", True),
+    ("scope", True),
+)
 print(sys.version.split()[0], k.__file__, k.version(), k.source_hash())
