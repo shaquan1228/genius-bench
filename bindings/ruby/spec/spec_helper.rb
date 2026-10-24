@@ -21,14 +21,19 @@ module KernelSpecSupport
     GeniusBench::Value.from_ruby(value: ruby)
   end
 
-  def state_task(predicate: GeniusBench::Predicate.equals(path: %w[response answer], expected: kernel(42)))
+  def state_task(
+    predicate: GeniusBench::Predicate.equals(path: %w[response answer], expected: kernel(42)),
+    completion: nil,
+    edits: [],
+    allowed_files: []
+  )
     GeniusBench::Task.new(
       id: "state",
       fixture: [],
       instruction: GeniusBench::Instruction.new(prompt: "observe"),
       criterion: GeniusBench::Criterion.state(predicate: predicate),
-      allowed_files: [],
-      reference: GeniusBench::Reference.new(edits: [], completion: kernel(nil))
+      allowed_files: allowed_files,
+      reference: GeniusBench::Reference.new(edits: edits, completion: completion)
     )
   end
 

@@ -1012,7 +1012,7 @@ struct Reference(core::Reference);
 wrapped!(Reference, core::Reference);
 
 fn reference_new(ruby: &Ruby, args: &[RValue]) -> Result<Obj<Reference>, Error> {
-    let (edits, completion): (RValue, Obj<Value>) = required(args, &["edits", "completion"])?;
+    let (edits, completion): (RValue, RValue) = required(args, &["edits", "completion"])?;
     Ok(frozen(
         ruby,
         Reference(core::Reference {
@@ -1020,7 +1020,7 @@ fn reference_new(ruby: &Ruby, args: &[RValue]) -> Result<Obj<Reference>, Error> 
                 .into_iter()
                 .map(|file| file.0)
                 .collect(),
-            completion: completion.0.clone(),
+            completion: convert(ruby, completion, &mut HashSet::new(), 0)?,
         }),
     ))
 }
@@ -1221,6 +1221,28 @@ fn task_grade(ruby: &Ruby, this: &Task, args: &[RValue]) -> Result<RArray, Error
     )
 }
 
+fn task_grade_reference(ruby: &Ruby, this: &Task, args: &[RValue]) -> Result<RArray, Error> {
+    let (verification,): (Obj<Verification>,) = required(args, &["verification"])?;
+    let reference = this.0.reference();
+    check_value_depth(ruby, &reference.completion, 1)?;
+    let outcome = core::Outcome {
+        changed_files: reference
+            .edits
+            .iter()
+            .map(|file| file.path.clone())
+            .collect(),
+        verification: verification.0.clone(),
+        response: reference.completion.clone(),
+        facts: vec![],
+    };
+    pairs(
+        ruby,
+        this.0
+            .grade(&outcome)
+            .map_err(|failure| grading_error(ruby, failure))?,
+    )
+}
+
 fn version(ruby: &Ruby) -> RString {
     string(ruby, core::version())
 }
@@ -1390,6 +1412,7 @@ fn init(ruby: &Ruby) -> Result<(), Error> {
     task.define_method("checks", method!(task_checks, 0))?;
     task.define_method("assess", method!(task_assess, -1))?;
     task.define_method("grade", method!(task_grade, -1))?;
+    task.define_method("grade_reference", method!(task_grade_reference, -1))?;
 
     module.const_set("NESTING_LIMIT", core::NESTING_LIMIT)?;
     module.const_set(

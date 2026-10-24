@@ -202,7 +202,7 @@ end
 
 RSpec.describe GeniusBench::Reference do
   describe ".new" do
-    subject(:reference) { described_class.new(edits: [GeniusBench::SourceFile.new(path: "a.txt", contents: "new")], completion: kernel("done")) }
+    subject(:reference) { described_class.new(edits: [GeniusBench::SourceFile.new(path: "a.txt", contents: "new")], completion: "done") }
 
     it_behaves_like "a frozen declaration"
 
@@ -212,6 +212,10 @@ RSpec.describe GeniusBench::Reference do
 
     it "exposes the completion" do
       expect(reference.completion.scalar).to eq("done")
+    end
+
+    it "accepts nil as the completion" do
+      expect(described_class.new(edits: [], completion: nil).completion.kind).to eq("null")
     end
   end
 end
