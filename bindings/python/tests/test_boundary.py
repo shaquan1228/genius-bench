@@ -20,7 +20,7 @@ def state_task():
             )
         ),
         allowed_files=[],
-        reference=k.Reference(edits=[], completion=k.Value.from_python(value=None)),
+        reference=k.Reference(edits=[], completion={"answer": 42}),
     )
 
 
@@ -128,6 +128,8 @@ def test_values_protocol_records_and_failures():
     for unsupported in (object(), {1: "bad"}, {1, 2}):
         with pytest.raises(TypeError):
             k.Value.from_python(value=unsupported)
+    with pytest.raises(TypeError):
+        k.Reference(edits=[], completion=object())
     with pytest.raises(TypeError):
         k.Value.from_python(1)
 
@@ -255,6 +257,11 @@ def test_explicit_adapters():
 
 def test_keyword_grading_and_reserved_facts():
     declaration = state_task()
+    assert declaration.reference.completion.get(path=["answer"]).scalar == 42
+    assert declaration.grade_reference(verification=k.Verification.unchecked()) == (
+        ("correctness", True),
+        ("scope", True),
+    )
     outcome = k.Outcome(
         changed_files=[],
         verification=k.Verification.unchecked(),
@@ -269,7 +276,54 @@ def test_keyword_grading_and_reserved_facts():
     with pytest.raises(TypeError):
         declaration.assess(outcome)
     with pytest.raises(TypeError):
+        declaration.grade_reference(k.Verification.unchecked())
+    with pytest.raises(TypeError):
         k.Instruction("prompt")
+
+
+def test_reference_grading_uses_edits_and_verification():
+    task = k.Task(
+        id="reference",
+        fixture=[k.SourceFile(path="solution.py", contents="original")],
+        instruction=k.Instruction(prompt="update"),
+        criterion=k.Criterion.state(
+            predicate=k.Predicate.all(
+                checks=[
+                    (
+                        "verification",
+                        k.Predicate.equals(
+                            path=["verification"],
+                            expected=k.Value.from_python(value="passed"),
+                        ),
+                    ),
+                    (
+                        "edits",
+                        k.Predicate.equals(
+                            path=["changed_files"],
+                            expected=k.Value.from_python(value=["solution.py"]),
+                        ),
+                    ),
+                ]
+            )
+        ),
+        allowed_files=["solution.py"],
+        reference=k.Reference(
+            edits=[k.SourceFile(path="solution.py", contents="updated")],
+            completion=None,
+        ),
+    )
+    assert task.grade_reference(verification=k.Verification.passed()) == (
+        ("correctness", True),
+        ("scope", True),
+    )
+    assert task.grade_reference(verification=k.Verification.failed()) == (
+        ("correctness", False),
+        ("scope", True),
+    )
+    with pytest.raises(k.GradingError, match="worker missing"):
+        task.grade_reference(
+            verification=k.Verification.harness_error(detail="worker missing")
+        )
 
 
 def test_compiler_free_source_identity():
@@ -389,6 +443,16 @@ def test_bounded_generated_observations_and_task_checks():
                 response=response,
                 facts=facts,
             )
+    reference_task = k.Task(
+        id="deep-reference",
+        fixture=[],
+        instruction=k.Instruction(prompt="observe"),
+        criterion=k.Criterion.state(predicate=k.Predicate.present(path=[])),
+        allowed_files=[],
+        reference=k.Reference(edits=[], completion=observation),
+    )
+    with pytest.raises(ValueError, match="nesting"):
+        reference_task.grade_reference(verification=k.Verification.unchecked())
     predicate = k.Predicate.present(path=[])
     for _ in range(255):
         predicate = k.Predicate.not_(check=predicate)

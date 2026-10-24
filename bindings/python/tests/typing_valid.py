@@ -47,7 +47,7 @@ task = Task(
     instruction=Instruction(prompt="Answer"),
     criterion=criterion,
     allowed_files=[],
-    reference=Reference(edits=[], completion=Value.from_python(value=None)),
+    reference=Reference(edits=[], completion=None),
 )
 outcome = Outcome(
     changed_files=[],
@@ -57,6 +57,9 @@ outcome = Outcome(
 )
 assessment: Assessment = task.assess(outcome=outcome)
 scores: tuple[tuple[str, bool], ...] = task.grade(outcome=outcome)
+reference_scores: tuple[tuple[str, bool], ...] = task.grade_reference(
+    verification=Verification.unchecked()
+)
 case: Case = task.project()
 source: tuple[str, str] = (version(), source_hash())
 required: tuple[str, str] = REQUIRED_SCORES

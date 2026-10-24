@@ -26,7 +26,7 @@ task = Task(
         )
     ),
     allowed_files=[],
-    reference=Reference(edits=[], completion=Value.from_python(value={"answer": 42})),
+    reference=Reference(edits=[], completion={"answer": 42}),
 )
 outcome = Outcome(
     changed_files=[],
@@ -37,6 +37,10 @@ outcome = Outcome(
 assessment = task.assess(outcome=outcome)
 assert assessment.passed()
 assert task.grade(outcome=outcome) == (("correctness", True), ("scope", True))
+assert task.grade_reference(verification=Verification.unchecked()) == (
+    ("correctness", True),
+    ("scope", True),
+)
 ```
 
 `Criterion.code(verifier=...)` declares executable verification;
@@ -56,7 +60,10 @@ directories. Path validation issues retain the `fixture` field label across
 fixture, allowed-file, and reference-edit paths. Walk `assessment.checks` to its
 leaves and call `observed()` to inspect the values behind failed checks.
 
-`Value.from_python(value=...)` is the explicit host-value boundary. It accepts
+`Reference(completion=...)` accepts native Python values and converts them to
+an immutable kernel `Value`; `Task.grade_reference(verification=...)` grades the
+reference edits and completion after the harness supplies a verification status.
+`Value.from_python(value=...)` is the explicit host-value boundary elsewhere. It accepts
 null, booleans, signed i64 integers, floats, strings, lists, tuples, string-keyed
 dictionaries, native values, and objects implementing `__kernel_value__()`.
 `KernelValue` describes that protocol. Booleans, integers, and floats remain

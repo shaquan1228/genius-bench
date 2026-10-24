@@ -746,11 +746,11 @@ struct Reference(core::Reference);
 impl Reference {
     #[new]
     #[pyo3(signature = (*, edits, completion))]
-    fn new(edits: Vec<SourceFile>, completion: Value) -> Self {
-        Self(core::Reference {
+    fn new(edits: Vec<SourceFile>, completion: &Bound<'_, PyAny>) -> PyResult<Self> {
+        Ok(Self(core::Reference {
             edits: edits.into_iter().map(|file| file.0).collect(),
-            completion: completion.0,
-        })
+            completion: Value::from_python(completion)?.0,
+        }))
     }
     #[getter]
     fn edits(&self, py: Python<'_>) -> PyResult<Py<PyTuple>> {
@@ -900,6 +900,27 @@ impl Task {
             py,
             self.0
                 .grade(&outcome.0)
+                .map_err(|failure| grading_error(py, failure))?,
+        )
+    }
+    #[pyo3(signature = (*, verification))]
+    fn grade_reference(&self, py: Python<'_>, verification: Verification) -> PyResult<Py<PyTuple>> {
+        let reference = self.0.reference();
+        check_value_depth(&reference.completion, 1)?;
+        let outcome = core::Outcome {
+            changed_files: reference
+                .edits
+                .iter()
+                .map(|file| file.path.clone())
+                .collect(),
+            verification: verification.0,
+            response: reference.completion.clone(),
+            facts: vec![],
+        };
+        tuple(
+            py,
+            self.0
+                .grade(&outcome)
                 .map_err(|failure| grading_error(py, failure))?,
         )
     }
