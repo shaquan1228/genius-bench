@@ -42,11 +42,11 @@ def test_native_identity_and_packaged_types():
 
 def test_snapshots_and_projection():
     paths = ["a.txt"]
-    fixture = [k.File(path="a.txt", contents="original")]
-    tools = [k.File(path="tool", contents="public")]
+    fixture = [k.SourceFile(path="a.txt", contents="original")]
+    tools = [k.SourceFile(path="tool", contents="public")]
     verifier = k.Verifier(
         inputs=paths,
-        files=[k.File(path="private", contents="secret")],
+        files=[k.SourceFile(path="private", contents="secret")],
         tools=tools,
         command=["check"],
         stdin="secret",
@@ -185,7 +185,7 @@ def test_native_validation_and_harness_failures():
     with pytest.raises(k.ValidationError) as failure:
         k.Task(
             id="bad id",
-            fixture=[k.File(path="../bad", contents="")],
+            fixture=[k.SourceFile(path="../bad", contents="")],
             instruction=k.Instruction(prompt=""),
             criterion=k.Criterion.code(
                 verifier=k.Verifier(

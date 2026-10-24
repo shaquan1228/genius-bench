@@ -12,9 +12,10 @@ fn tuple<'py, T: IntoPyObject<'py>>(py: Python<'py>, items: Vec<T>) -> PyResult<
 }
 
 fn check_depth(depth: usize, kind: &str) -> PyResult<()> {
-    if depth > 256 {
+    if depth > core::NESTING_LIMIT {
         Err(PyValueError::new_err(format!(
-            "{kind} nesting exceeds 256 levels"
+            "{kind} nesting exceeds {} levels",
+            core::NESTING_LIMIT
         )))
     } else {
         Ok(())
@@ -22,36 +23,11 @@ fn check_depth(depth: usize, kind: &str) -> PyResult<()> {
 }
 
 fn check_value_depth(value: &core::Value, depth: usize) -> PyResult<()> {
-    let mut pending = vec![(value, depth)];
-    while let Some((value, depth)) = pending.pop() {
-        match value {
-            core::Value::List(items) => {
-                check_depth(depth + 1, "Kernel value")?;
-                pending.extend(items.iter().map(|item| (item, depth + 1)));
-            }
-            core::Value::Record(fields) => {
-                check_depth(depth + 1, "Kernel value")?;
-                pending.extend(fields.iter().map(|(_, item)| (item, depth + 1)));
-            }
-            _ => {}
-        }
-    }
-    Ok(())
+    check_depth(depth + value.nesting_depth(), "Kernel value")
 }
 
 fn check_predicate_depth(predicate: &core::Predicate, depth: usize) -> PyResult<()> {
-    let mut pending = vec![(predicate, depth)];
-    while let Some((predicate, depth)) = pending.pop() {
-        check_depth(depth + 1, "Predicate")?;
-        match predicate {
-            core::Predicate::All { checks } | core::Predicate::Any { checks } => {
-                pending.extend(checks.iter().map(|(_, check)| (check, depth + 1)));
-            }
-            core::Predicate::Not { check } => pending.push((check, depth + 1)),
-            _ => {}
-        }
-    }
-    Ok(())
+    check_depth(depth + predicate.nesting_depth(), "Predicate")
 }
 
 fn sequence_snapshot<'py>(value: &Bound<'py, PyAny>) -> PyResult<Vec<Bound<'py, PyAny>>> {
@@ -553,10 +529,10 @@ impl Assessment {
 
 #[pyclass(module = "kernel._native", frozen, from_py_object)]
 #[derive(Clone)]
-struct File(core::File);
+struct SourceFile(core::File);
 
 #[pymethods]
-impl File {
+impl SourceFile {
     #[new]
     #[pyo3(signature = (*, path, contents))]
     fn new(path: String, contents: String) -> Self {
@@ -599,8 +575,8 @@ impl Verifier {
     #[pyo3(signature = (*, inputs, files, tools, command, stdin, timeout_seconds))]
     fn new(
         inputs: Vec<String>,
-        files: Vec<File>,
-        tools: Vec<File>,
+        files: Vec<SourceFile>,
+        tools: Vec<SourceFile>,
         command: Vec<String>,
         stdin: String,
         timeout_seconds: i64,
@@ -620,11 +596,11 @@ impl Verifier {
     }
     #[getter]
     fn files(&self, py: Python<'_>) -> PyResult<Py<PyTuple>> {
-        tuple(py, self.0.files.iter().cloned().map(File).collect())
+        tuple(py, self.0.files.iter().cloned().map(SourceFile).collect())
     }
     #[getter]
     fn tools(&self, py: Python<'_>) -> PyResult<Py<PyTuple>> {
-        tuple(py, self.0.tools.iter().cloned().map(File).collect())
+        tuple(py, self.0.tools.iter().cloned().map(SourceFile).collect())
     }
     #[getter]
     fn command(&self, py: Python<'_>) -> PyResult<Py<PyTuple>> {
@@ -770,7 +746,7 @@ struct Reference(core::Reference);
 impl Reference {
     #[new]
     #[pyo3(signature = (*, edits, completion))]
-    fn new(edits: Vec<File>, completion: Value) -> Self {
+    fn new(edits: Vec<SourceFile>, completion: Value) -> Self {
         Self(core::Reference {
             edits: edits.into_iter().map(|file| file.0).collect(),
             completion: completion.0,
@@ -778,7 +754,7 @@ impl Reference {
     }
     #[getter]
     fn edits(&self, py: Python<'_>) -> PyResult<Py<PyTuple>> {
-        tuple(py, self.0.edits.iter().cloned().map(File).collect())
+        tuple(py, self.0.edits.iter().cloned().map(SourceFile).collect())
     }
     #[getter]
     fn completion(&self) -> Value {
@@ -802,7 +778,7 @@ impl Case {
     }
     #[getter]
     fn files(&self, py: Python<'_>) -> PyResult<Py<PyTuple>> {
-        tuple(py, self.0.files.iter().cloned().map(File).collect())
+        tuple(py, self.0.files.iter().cloned().map(SourceFile).collect())
     }
 }
 
@@ -837,11 +813,10 @@ fn validation_error(py: Python<'_>, failure: core::ValidationFailure) -> PyErr {
 
 fn grading_error(py: Python<'_>, failure: core::GradingFailure) -> PyErr {
     let error = GradingError::new_err(failure.to_string());
+    let kind = failure.kind();
     let core::GradingFailure::VerificationHarnessError { detail } = failure;
     let result = (|| -> PyResult<()> {
-        error
-            .value(py)
-            .setattr("failure", "verification_harness_error")?;
+        error.value(py).setattr("failure", kind)?;
         error.value(py).setattr("detail", detail)?;
         Ok(())
     })();
@@ -858,7 +833,7 @@ impl Task {
     #[pyo3(signature = (*, id, fixture, instruction, criterion, allowed_files, reference))]
     fn new(
         id: String,
-        fixture: Vec<File>,
+        fixture: Vec<SourceFile>,
         instruction: Instruction,
         criterion: Criterion,
         allowed_files: Vec<String>,
@@ -885,7 +860,10 @@ impl Task {
     }
     #[getter]
     fn fixture(&self, py: Python<'_>) -> PyResult<Py<PyTuple>> {
-        tuple(py, self.0.fixture().iter().cloned().map(File).collect())
+        tuple(
+            py,
+            self.0.fixture().iter().cloned().map(SourceFile).collect(),
+        )
     }
     #[getter]
     fn instruction(&self) -> Instruction {
@@ -945,7 +923,7 @@ fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<Verification>()?;
     module.add_class::<Outcome>()?;
     module.add_class::<Assessment>()?;
-    module.add_class::<File>()?;
+    module.add_class::<SourceFile>()?;
     module.add_class::<Instruction>()?;
     module.add_class::<Verifier>()?;
     module.add_class::<TextRule>()?;

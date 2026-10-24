@@ -4,7 +4,7 @@ use crate::{Predicate, Value};
 behind every check so a result explains itself. Named conjunctions become scores.
 https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents
 https://developers.openai.com/api/docs/guides/graders */
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Hash)]
 pub enum Assessment {
     Check {
         predicate: Predicate,

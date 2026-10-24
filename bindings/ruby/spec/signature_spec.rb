@@ -12,8 +12,12 @@ RSpec.describe "sig/genius_bench.rbs" do
   environment = RBS::Environment.from_loader(loader).resolve_type_names
   declared = environment.class_decls.select { |name, _| name.namespace.to_s == "::GeniusBench::" || name.to_s == "::GeniusBench" }
 
-  it "declares every module and class under GeniusBench" do
-    expect(declared.size).to eq(GeniusBench.constants.count { |name| GeniusBench.const_get(name).is_a?(Module) } + 1)
+  describe "the declared modules and classes" do
+    subject { declared.keys.map(&:to_s).sort }
+
+    let(:defined) { ["::GeniusBench", *GeniusBench.constants.select { |name| GeniusBench.const_get(name).is_a?(Module) }.map { |name| "::GeniusBench::#{name}" }].sort }
+
+    it { is_expected.to eq(defined) }
   end
 
   %w[VERSION NESTING_LIMIT REQUIRED_SCORES].each do |constant|
@@ -25,17 +29,17 @@ RSpec.describe "sig/genius_bench.rbs" do
   declared.each do |name, entry|
     constant = Object.const_get(name.to_s.delete_prefix("::"))
     singleton, instance = entry.decls
-                               .flat_map { |decl| decl.decl.members.grep(RBS::AST::Members::MethodDefinition) }
-                               .partition(&:singleton?)
-                               .map { |members| members.map(&:name).sort }
+      .flat_map { |decl| decl.decl.members.grep(RBS::AST::Members::MethodDefinition) }
+      .partition(&:singleton?)
+      .map { |members| members.map(&:name).sort }
 
     describe name.to_s do
       it "declares the singleton methods" do
-        expect(singleton).to eq(constant.singleton_methods(false).sort)
+        expect(singleton).to eq(constant.singleton_methods(false).grep_v(/__with(out)?__/).sort)
       end
 
       it "declares the instance methods" do
-        expect(instance).to eq(constant.public_instance_methods(false).sort)
+        expect(instance).to eq(constant.public_instance_methods(false).grep_v(/__with(out)?__/).sort)
       end
     end
   end

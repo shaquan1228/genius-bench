@@ -17,6 +17,7 @@ module GeniusBench
   type predicate_kind = "present" | "equals" | "within" | "contains" | "words" | "all" | "any" | "not"
   type verification_status = "unchecked" | "passed" | "failed" | "invalid_submission" | "timed_out" | "harness_error"
   type scores = Array[[String, bool]]
+  type named[T] = Array[[String | Symbol, T]] | Hash[String | Symbol, T]
 
   class Value
     def self.from_ruby: (value: kernel_input) -> Value
@@ -26,12 +27,20 @@ module GeniusBench
     def fields: () -> Array[[String, Value]]
     def get: (path: Array[String]) -> Value?
     def equal_to?: (other: Value) -> bool
+    def ==: (untyped other) -> bool
+    def eql?: (untyped other) -> bool
+    def hash: () -> Integer
+    def inspect: () -> String
   end
 
   class Record
-    def self.new: (fields: Array[[String, kernel_input]]) -> Record
+    def self.new: (fields: named[kernel_input]) -> Record
     def fields: () -> Array[[String, Value]]
     def to_kernel_value: () -> Value
+    def ==: (untyped other) -> bool
+    def eql?: (untyped other) -> bool
+    def hash: () -> Integer
+    def inspect: () -> String
   end
 
   class Predicate
@@ -40,8 +49,8 @@ module GeniusBench
     def self.within: (path: Array[String], allowed: Array[Value]) -> Predicate
     def self.contains: (path: Array[String], item: Value) -> Predicate
     def self.words: (path: Array[String], min_words: Integer, max_words: Integer) -> Predicate
-    def self.all: (checks: Array[[String, Predicate]]) -> Predicate
-    def self.any: (checks: Array[[String, Predicate]]) -> Predicate
+    def self.all: (checks: named[Predicate]) -> Predicate
+    def self.any: (checks: named[Predicate]) -> Predicate
     def self.not: (check: Predicate) -> Predicate
     def holds?: (observation: Value) -> bool
     def kind: () -> predicate_kind
@@ -53,6 +62,10 @@ module GeniusBench
     def max_words: () -> Integer?
     def checks: () -> Array[[String, Predicate]]
     def check: () -> Predicate?
+    def ==: (untyped other) -> bool
+    def eql?: (untyped other) -> bool
+    def hash: () -> Integer
+    def inspect: () -> String
   end
 
   class Verification
@@ -64,15 +77,23 @@ module GeniusBench
     def self.harness_error: (detail: String) -> Verification
     def status: () -> verification_status
     def detail: () -> String?
+    def ==: (untyped other) -> bool
+    def eql?: (untyped other) -> bool
+    def hash: () -> Integer
+    def inspect: () -> String
   end
 
   class Outcome
-    def self.new: (changed_files: Array[String], verification: Verification, response: Value, facts: Array[[String, Value]]) -> Outcome
+    def self.new: (changed_files: Array[String], verification: Verification, response: Value, facts: named[Value]) -> Outcome
     def changed_files: () -> Array[String]
     def verification: () -> Verification
     def response: () -> Value
     def facts: () -> Array[[String, Value]]
     def observation: () -> Value
+    def ==: (untyped other) -> bool
+    def eql?: (untyped other) -> bool
+    def hash: () -> Integer
+    def inspect: () -> String
   end
 
   class Assessment
@@ -84,27 +105,43 @@ module GeniusBench
     def predicate: () -> Predicate?
     def observation: () -> Value?
     def checks: () -> Array[[String, Assessment]]
+    def ==: (untyped other) -> bool
+    def eql?: (untyped other) -> bool
+    def hash: () -> Integer
+    def inspect: () -> String
   end
 
-  class File
-    def self.new: (path: String, contents: String) -> File
+  class SourceFile
+    def self.new: (path: String, contents: String) -> SourceFile
     def path: () -> String
     def contents: () -> String
+    def ==: (untyped other) -> bool
+    def eql?: (untyped other) -> bool
+    def hash: () -> Integer
+    def inspect: () -> String
   end
 
   class Instruction
     def self.new: (prompt: String) -> Instruction
     def prompt: () -> String
+    def ==: (untyped other) -> bool
+    def eql?: (untyped other) -> bool
+    def hash: () -> Integer
+    def inspect: () -> String
   end
 
   class Verifier
-    def self.new: (inputs: Array[String], files: Array[File], tools: Array[File], command: Array[String], stdin: String, timeout_seconds: Integer) -> Verifier
+    def self.new: (inputs: Array[String], files: Array[SourceFile], tools: Array[SourceFile], command: Array[String], stdin: String, timeout_seconds: Integer) -> Verifier
     def inputs: () -> Array[String]
-    def files: () -> Array[File]
-    def tools: () -> Array[File]
+    def files: () -> Array[SourceFile]
+    def tools: () -> Array[SourceFile]
     def command: () -> Array[String]
     def stdin: () -> String
     def timeout_seconds: () -> Integer
+    def ==: (untyped other) -> bool
+    def eql?: (untyped other) -> bool
+    def hash: () -> Integer
+    def inspect: () -> String
   end
 
   class TextRule
@@ -112,12 +149,20 @@ module GeniusBench
     def field: () -> String
     def min_words: () -> Integer
     def max_words: () -> Integer
+    def ==: (untyped other) -> bool
+    def eql?: (untyped other) -> bool
+    def hash: () -> Integer
+    def inspect: () -> String
   end
 
   class Rubric
-    def self.new: (expected: Array[[String, Value]], text_rule: TextRule?) -> Rubric
+    def self.new: (expected: named[Value], text_rule: TextRule?) -> Rubric
     def expected: () -> Array[[String, Value]]
     def text_rule: () -> TextRule?
+    def ==: (untyped other) -> bool
+    def eql?: (untyped other) -> bool
+    def hash: () -> Integer
+    def inspect: () -> String
   end
 
   class Criterion
@@ -129,23 +174,39 @@ module GeniusBench
     def verifier: () -> Verifier?
     def rubric: () -> Rubric?
     def predicate: () -> Predicate?
+    def ==: (untyped other) -> bool
+    def eql?: (untyped other) -> bool
+    def hash: () -> Integer
+    def inspect: () -> String
   end
 
   class Reference
-    def self.new: (edits: Array[File], completion: Value) -> Reference
-    def edits: () -> Array[File]
+    def self.new: (edits: Array[SourceFile], completion: Value) -> Reference
+    def edits: () -> Array[SourceFile]
     def completion: () -> Value
+    def ==: (untyped other) -> bool
+    def eql?: (untyped other) -> bool
+    def hash: () -> Integer
+    def inspect: () -> String
   end
 
   class Case
     def case_id: () -> String
     def prompt: () -> String
-    def files: () -> Array[File]
+    def files: () -> Array[SourceFile]
+    def ==: (untyped other) -> bool
+    def eql?: (untyped other) -> bool
+    def hash: () -> Integer
+    def inspect: () -> String
   end
 
   class Issue
     def field: () -> String
     def message: () -> String
+    def ==: (untyped other) -> bool
+    def eql?: (untyped other) -> bool
+    def hash: () -> Integer
+    def inspect: () -> String
   end
 
   class ValidationError < ArgumentError
@@ -159,9 +220,9 @@ module GeniusBench
   end
 
   class Task
-    def self.new: (id: String, fixture: Array[File], instruction: Instruction, criterion: Criterion, allowed_files: Array[String], reference: Reference) -> Task
+    def self.new: (id: String, fixture: Array[SourceFile], instruction: Instruction, criterion: Criterion, allowed_files: Array[String], reference: Reference) -> Task
     def id: () -> String
-    def fixture: () -> Array[File]
+    def fixture: () -> Array[SourceFile]
     def instruction: () -> Instruction
     def criterion: () -> Criterion
     def allowed_files: () -> Array[String]
@@ -170,5 +231,9 @@ module GeniusBench
     def checks: () -> Verifier?
     def assess: (outcome: Outcome) -> Assessment
     def grade: (outcome: Outcome) -> scores
+    def ==: (untyped other) -> bool
+    def eql?: (untyped other) -> bool
+    def hash: () -> Integer
+    def inspect: () -> String
   end
 end

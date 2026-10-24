@@ -16,6 +16,7 @@ pub use value::Value;
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const SOURCE_HASH: &str = env!("SEMANTIC_CORE_SOURCE_HASH");
 pub const REQUIRED_SCORES: [&str; 2] = ["correctness", "scope"];
+pub const NESTING_LIMIT: usize = 256;
 
 pub fn version() -> &'static str {
     VERSION

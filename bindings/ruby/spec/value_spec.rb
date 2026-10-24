@@ -59,7 +59,7 @@ RSpec.describe GeniusBench::Value do
       end
 
       it "rejects invalid UTF-8" do
-        expect { kernel("\xff".dup.force_encoding("UTF-8")) }.to raise_error(EncodingError)
+        expect { kernel((+"\xff").force_encoding("UTF-8")) }.to raise_error(EncodingError)
       end
 
       it "returns frozen scalars" do
@@ -68,7 +68,7 @@ RSpec.describe GeniusBench::Value do
     end
 
     context "with containers" do
-      subject(:converted) { kernel({ "values" => nested, null: nil }) }
+      subject(:converted) { kernel({"values" => nested, :null => nil}) }
 
       let(:nested) { [1] }
 
@@ -87,21 +87,20 @@ RSpec.describe GeniusBench::Value do
       end
 
       it "accepts symbol keys as names" do
-        expect(scalars_of(kernel({ x: 1 }).fields)).to eq([["x", 1]])
+        expect(scalars_of(kernel({x: 1}).fields)).to eq([["x", 1]])
       end
 
       it "rejects names that collide after symbol conversion" do
-        expect { kernel({ "x" => 1, x: 2 }) }.to raise_error(ArgumentError, /Duplicate record field/)
+        expect { kernel({"x" => 1, :x => 2}) }.to raise_error(ArgumentError, /Duplicate record field/)
       end
 
       it "keeps shared sub-structures as separate items" do
-        shared = [1]
-        expect(kernel([shared, shared]).items.size).to eq(2)
+        expect(kernel([nested, nested]).items.size).to eq(2)
       end
     end
 
     context "with a to_kernel_value object" do
-      let(:custom) { Object.new.tap { |object| def object.to_kernel_value = { "answer" => 42 } } }
+      let(:custom) { Object.new.tap { |object| def object.to_kernel_value = {"answer" => 42} } }
 
       it "converts the protocol result" do
         expect(kernel(custom).get(path: ["answer"]).scalar).to eq(42)
@@ -112,7 +111,7 @@ RSpec.describe GeniusBench::Value do
       let(:recursive) { [].tap { |array| array << array } }
       let(:self_returning) { Object.new.tap { |object| def object.to_kernel_value = self } }
 
-      it "rejects a self-containing array" do
+      it "rejects a self-containing array", contract: true do
         expect { kernel(recursive) }.to raise_error(ArgumentError, /[Cc]ycl/)
       end
 
@@ -121,15 +120,15 @@ RSpec.describe GeniusBench::Value do
       end
     end
 
-    context "with unsupported values" do
-      [Object.new, { 1 => "bad" }, Set.new([1, 2]), :symbol].each do |unsupported|
+    context "with unsupported values", contract: true do
+      [Object.new, {1 => "bad"}, Set.new([1, 2]), :symbol].each do |unsupported|
         it "raises TypeError for #{unsupported.class}" do
           expect { kernel(unsupported) }.to raise_error(TypeError)
         end
       end
     end
 
-    context "with the keyword contract" do
+    context "with the keyword contract", contract: true do
       it "rejects a positional value" do
         expect { described_class.from_ruby(1) }.to raise_error(ArgumentError)
       end
@@ -141,7 +140,7 @@ RSpec.describe GeniusBench::Value do
 
     context "when a callback mutates a hash during conversion" do
       let(:tail) { "tail " * 1024 }
-      let(:source) { { "hook" => hook, "tail" => tail.dup } }
+      let(:source) { {"hook" => hook, "tail" => tail.dup} }
       let(:hook) do
         source_reference = -> { source }
         action = mutation
@@ -210,7 +209,7 @@ RSpec.describe GeniusBench::Value do
       end
     end
 
-    context "with containers that override iteration" do
+    context "with containers that override iteration", contract: true do
       let(:list) do
         Class.new(Array) do
           def each = raise("Overridden array iterator")
@@ -229,7 +228,7 @@ RSpec.describe GeniusBench::Value do
       end
 
       it "reads hashes natively" do
-        expect(scalars_of(kernel(mapping[{ "x" => 1 }]).fields)).to eq([["x", 1]])
+        expect(scalars_of(kernel(mapping[{"x" => 1}]).fields)).to eq([["x", 1]])
       end
     end
 
@@ -280,7 +279,7 @@ RSpec.describe GeniusBench::Value do
     let(:duplicate) { kernel(GeniusBench::Record.new(fields: [["x", 1], ["x", 2]])) }
 
     it "uses first-field record semantics" do
-      expect(duplicate).to be_equal_to(other: kernel({ "x" => 1 }))
+      expect(duplicate).to be_equal_to(other: kernel({"x" => 1}))
     end
 
     it "keeps booleans distinct from integers" do
@@ -305,11 +304,50 @@ RSpec.describe GeniusBench::Value do
     end
 
     it "leaves identity equality to Ruby" do
-      expect(duplicate).to equal(duplicate)
+      expect(duplicate).not_to equal(kernel(GeniusBench::Record.new(fields: [["x", 1], ["x", 2]])))
     end
 
-    it "leaves == as identity" do
-      expect(duplicate).not_to eq(kernel({ "x" => 1 }))
+    it "rejects a value that is not a Value", contract: true do
+      expect { duplicate.equal_to?(other: 1) }.to raise_error(TypeError)
     end
+  end
+
+  describe "#==" do
+    subject(:value) { kernel({"x" => 1, "y" => [1.5, nil]}) }
+
+    it { is_expected.to eq(kernel({"y" => [1.5, nil], "x" => 1})) }
+    it { is_expected.not_to eq(kernel({"x" => 1})) }
+    it { is_expected.not_to eq({"x" => 1, "y" => [1.5, nil]}) }
+    it { is_expected.to eql(kernel({"x" => 1, "y" => [1.5, nil]})) }
+
+    it "keeps NaN unequal to itself" do
+      nan = kernel(Float::NAN)
+      expect(nan).not_to eq(nan)
+    end
+  end
+
+  describe "#hash" do
+    it "agrees with == across field order" do
+      expect(kernel({"x" => 1, "y" => 2}).hash).to eq(kernel({"y" => 2, "x" => 1}).hash)
+    end
+
+    it "agrees with == across signed zeros" do
+      expect(kernel(-0.0).hash).to eq(kernel(0.0).hash)
+    end
+
+    it "agrees with == across duplicate fields" do
+      duplicate = kernel(GeniusBench::Record.new(fields: [["x", 1], ["x", 2]]))
+      expect(duplicate.hash).to eq(kernel({"x" => 1}).hash)
+    end
+
+    it "deduplicates equal values in a Hash" do
+      expect({kernel([1]) => true, kernel([1]) => false}.size).to eq(1)
+    end
+  end
+
+  describe "#inspect" do
+    subject { kernel([1, "x"]).inspect }
+
+    it { is_expected.to eq('#<GeniusBench::Value List([Int(1), String("x")])>') }
   end
 end

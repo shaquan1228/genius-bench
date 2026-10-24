@@ -8,7 +8,7 @@ RSpec.shared_examples "a frozen declaration" do
   end
 end
 
-RSpec.describe GeniusBench::File do
+RSpec.describe GeniusBench::SourceFile do
   describe ".new" do
     subject(:file) { described_class.new(path: "a.txt", contents: "data") }
 
@@ -19,7 +19,7 @@ RSpec.describe GeniusBench::File do
       expect(file.path).to be_frozen
     end
 
-    context "with a non-string path" do
+    context "with a non-string path", contract: true do
       it "raises TypeError" do
         expect { described_class.new(path: 1, contents: "") }.to raise_error(TypeError)
       end
@@ -34,19 +34,19 @@ RSpec.describe GeniusBench::Instruction do
     it_behaves_like "a frozen declaration"
     it { is_expected.to have_attributes(prompt: "observe") }
 
-    context "with a positional prompt" do
+    context "with a positional prompt", contract: true do
       it "raises ArgumentError" do
         expect { described_class.new("observe") }.to raise_error(ArgumentError)
       end
     end
 
-    context "without a prompt" do
+    context "without a prompt", contract: true do
       it "raises ArgumentError" do
         expect { described_class.new }.to raise_error(ArgumentError)
       end
     end
 
-    context "with a prompt that only converts through to_str" do
+    context "with a prompt that only converts through to_str", contract: true do
       let(:convertible) { Object.new.tap { |object| def object.to_str = "a" } }
 
       it "raises TypeError" do
@@ -61,8 +61,8 @@ RSpec.describe GeniusBench::Verifier do
     subject(:verifier) do
       described_class.new(
         inputs: ["a.txt"],
-        files: [GeniusBench::File.new(path: "private", contents: "secret")],
-        tools: [GeniusBench::File.new(path: "tool", contents: "public")],
+        files: [GeniusBench::SourceFile.new(path: "private", contents: "secret")],
+        tools: [GeniusBench::SourceFile.new(path: "tool", contents: "public")],
         command: ["check"],
         stdin: "secret",
         timeout_seconds: 1
@@ -80,13 +80,13 @@ RSpec.describe GeniusBench::Verifier do
       expect(verifier.tools.map(&:path)).to eq(["tool"])
     end
 
-    context "with a fractional timeout" do
+    context "with a fractional timeout", contract: true do
       it "raises TypeError" do
         expect { described_class.new(inputs: [], files: [], tools: [], command: [], stdin: "", timeout_seconds: 1.9) }.to raise_error(TypeError)
       end
     end
 
-    context "with a file that is not a File" do
+    context "with a file that is not a SourceFile", contract: true do
       it "raises TypeError" do
         expect { described_class.new(inputs: [], files: ["no"], tools: [], command: [], stdin: "", timeout_seconds: 1) }.to raise_error(TypeError)
       end
@@ -101,7 +101,7 @@ RSpec.describe GeniusBench::TextRule do
     it_behaves_like "a frozen declaration"
     it { is_expected.to have_attributes(field: "reason", min_words: 1, max_words: 5) }
 
-    context "with non-integer bounds" do
+    context "with non-integer bounds", contract: true do
       [1.5, Rational(3, 2), true, "2", nil].each do |invalid|
         it "raises TypeError for #{invalid.inspect}" do
           expect { described_class.new(field: "f", min_words: 0, max_words: invalid) }.to raise_error(TypeError)
@@ -122,7 +122,7 @@ RSpec.describe GeniusBench::Rubric do
       expect(scalars_of(rubric.expected)).to eq([["answer", 42]])
     end
 
-    context "with an expected value that is not a Value" do
+    context "with an expected value that is not a Value", contract: true do
       it "raises TypeError" do
         expect { described_class.new(expected: [["answer", 1]], text_rule: nil) }.to raise_error(TypeError)
       end
@@ -202,7 +202,7 @@ end
 
 RSpec.describe GeniusBench::Reference do
   describe ".new" do
-    subject(:reference) { described_class.new(edits: [GeniusBench::File.new(path: "a.txt", contents: "new")], completion: kernel("done")) }
+    subject(:reference) { described_class.new(edits: [GeniusBench::SourceFile.new(path: "a.txt", contents: "new")], completion: kernel("done")) }
 
     it_behaves_like "a frozen declaration"
 

@@ -4,7 +4,7 @@ use crate::{Value, support};
 file edits, structured replies, tool traces, and environment state.
 https://arxiv.org/abs/2307.13854 (WebArena: exact_match, must_include, located state)
 https://arxiv.org/abs/2406.13352 (AgentDojo: utility and security as separate predicates) */
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Hash)]
 pub enum Predicate {
     Present {
         path: Vec<String>,
@@ -47,6 +47,22 @@ impl Predicate {
             | Self::Words { path, .. } => Some(path),
             _ => None,
         }
+    }
+
+    pub fn nesting_depth(&self) -> usize {
+        let mut deepest = 0;
+        let mut pending = vec![(self, 1)];
+        while let Some((predicate, depth)) = pending.pop() {
+            deepest = deepest.max(depth);
+            match predicate {
+                Self::All { checks } | Self::Any { checks } => {
+                    pending.extend(checks.iter().map(|(_, check)| (check, depth + 1)));
+                }
+                Self::Not { check } => pending.push((check.as_ref(), depth + 1)),
+                _ => {}
+            }
+        }
+        deepest
     }
 
     pub fn holds(&self, observation: &Value) -> bool {

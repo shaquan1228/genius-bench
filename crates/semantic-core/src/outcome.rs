@@ -6,7 +6,7 @@ open facts carry a tool trace, environment state, or anything else observed.
 https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents
 https://docs.harborframework.com/tasks/verifier
 https://arxiv.org/abs/2506.07982 (tau2-bench: state, actions, and messages per episode) */
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Verification {
     Unchecked,
     Passed,
@@ -29,7 +29,7 @@ impl Verification {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Hash)]
 pub struct Outcome {
     pub changed_files: Vec<String>,
     pub verification: Verification,

@@ -15,22 +15,46 @@ RSpec.describe GeniusBench::Record do
     end
 
     context "with a nested array that changes later" do
+      subject(:record) { described_class.new(fields: fields) }
+
       let(:fields) { [["x", [1]]] }
 
       it "snapshots the array at construction" do
-        record = described_class.new(fields: fields)
+        record
         fields[0][1] << 2
         expect(record.fields[0][1].items.size).to eq(1)
       end
     end
 
     context "with a symbol name" do
-      it "raises TypeError" do
-        expect { described_class.new(fields: [[:name, 1]]) }.to raise_error(TypeError)
+      subject(:record) { described_class.new(fields: [[:name, 1]]) }
+
+      it "converts the name" do
+        expect(scalars_of(record.fields)).to eq([["name", 1]])
       end
     end
 
-    context "with an entry that is not a pair" do
+    context "with a Hash of fields" do
+      subject(:record) { described_class.new(fields: {:name => 1, "text" => "x"}) }
+
+      it "keeps the entry order" do
+        expect(scalars_of(record.fields)).to eq([["name", 1], ["text", "x"]])
+      end
+    end
+
+    context "with a name that is not a String or Symbol", contract: true do
+      it "raises TypeError" do
+        expect { described_class.new(fields: [[1, 1]]) }.to raise_error(TypeError)
+      end
+    end
+
+    context "with fields that are not pairs or a Hash", contract: true do
+      it "raises TypeError" do
+        expect { described_class.new(fields: "x") }.to raise_error(TypeError)
+      end
+    end
+
+    context "with an entry that is not a pair", contract: true do
       it "raises TypeError" do
         expect { described_class.new(fields: ["x"]) }.to raise_error(TypeError)
       end
@@ -70,7 +94,7 @@ RSpec.describe GeniusBench::Record do
       end
     end
 
-    context "with pairs inside an array that overrides iteration" do
+    context "with pairs inside an array that overrides iteration", contract: true do
       let(:list) do
         Class.new(Array) do
           def each = raise("Overridden array iterator")

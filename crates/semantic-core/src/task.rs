@@ -11,7 +11,7 @@ are in tau-bench and AgentDojo.
 https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents
 https://huggingface.co/docs/lighteval/v0.13.0/package_reference/doc
 https://arxiv.org/abs/2406.13352 */
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Hash)]
 pub struct Task {
     id: String,
     fixture: Vec<File>,
@@ -24,7 +24,7 @@ pub struct Task {
 /* Fixture files: immutable initial state, the seed for file and non-file environments.
 https://inspect.aisi.org.uk/datasets.html#sample-files
 https://docs.harborframework.com/tasks/environment */
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct File {
     pub path: String,
     pub contents: String,
@@ -32,14 +32,14 @@ pub struct File {
 
 /* Instruction: the task input, mapping to lighteval's query and OpenAI eval inputs.
 https://huggingface.co/docs/lighteval/main/en/package_reference/doc */
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Instruction {
     pub prompt: String,
 }
 
 /* Verifier: an executable private check run on declared candidate inputs.
 https://docs.harborframework.com/tasks/verifier */
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Verifier {
     pub inputs: Vec<String>,
     pub files: Vec<File>,
@@ -52,14 +52,14 @@ pub struct Verifier {
 /* Rubric: expected response fields and a bounded-word text rule, this repository's
 deterministic subset of a grading rubric.
 https://github.com/openai/evals/blob/main/docs/eval-templates.md#example-model-graded-evals */
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct TextRule {
     pub field: String,
     pub min_words: i64,
     pub max_words: i64,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Hash)]
 pub struct Rubric {
     pub expected: Vec<(String, Value)>,
     pub text_rule: Option<TextRule>,
@@ -69,7 +69,7 @@ pub struct Rubric {
 rubric over the response, or a predicate over the whole observation.
 https://developers.openai.com/api/docs/guides/evals
 https://arxiv.org/abs/2406.12045 (tau-bench: final state and required outputs) */
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Hash)]
 pub enum Criterion {
     Code { verifier: Verifier },
     Answer { rubric: Rubric },
@@ -118,13 +118,13 @@ impl Criterion {
 
 /* Reference: reference edits and completion for offline validation.
 https://evalscope.readthedocs.io/en/latest/advanced_guides/custom_dataset/llm.html */
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Hash)]
 pub struct Reference {
     pub edits: Vec<File>,
     pub completion: Value,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Case {
     pub case_id: String,
     pub prompt: String,

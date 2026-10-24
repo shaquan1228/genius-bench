@@ -3,7 +3,7 @@ from kernel import (
     Assessment,
     Case,
     Criterion,
-    File,
+    SourceFile,
     Instruction,
     KernelValue,
     Outcome,
@@ -40,7 +40,7 @@ record_value: Value = record.__kernel_value__()
 text_rule = TextRule(field="reason", min_words=1, max_words=5)
 rubric = Rubric(expected=[("answer", value)], text_rule=text_rule)
 criterion: Criterion = Criterion.answer(rubric=rubric)
-files: tuple[File, ...] = (File(path="input.txt", contents="data"),)
+files: tuple[SourceFile, ...] = (SourceFile(path="input.txt", contents="data"),)
 task = Task(
     id="answer",
     fixture=files,

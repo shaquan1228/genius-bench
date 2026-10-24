@@ -8,7 +8,7 @@ RSpec.describe GeniusBench::Assessment do
     )
   end
   let(:condition) { GeniusBench::Criterion.answer(rubric: rubric).condition }
-  let(:observation) { kernel({ "response" => { "answer" => 42, "reason" => "six sevens" } }) }
+  let(:observation) { kernel({"response" => {"answer" => 42, "reason" => "six sevens"}}) }
 
   describe ".new" do
     subject(:assessment) { described_class.new(predicate: condition, observation: observation) }
@@ -51,7 +51,7 @@ RSpec.describe GeniusBench::Assessment do
     end
 
     context "with a failing rubric" do
-      let(:observation) { kernel({ "response" => { "answer" => 41, "reason" => "six sevens" } }) }
+      let(:observation) { kernel({"response" => {"answer" => 41, "reason" => "six sevens"}}) }
 
       it { is_expected.not_to be_passed }
 
