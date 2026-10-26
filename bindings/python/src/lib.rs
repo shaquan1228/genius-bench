@@ -111,6 +111,17 @@ fn convert(
     result
 }
 
+fn host_value(value: &Bound<'_, PyAny>) -> PyResult<core::Value> {
+    convert(value, &mut HashSet::new(), 0)
+}
+
+fn host_fields(fields: Vec<(String, Bound<'_, PyAny>)>) -> PyResult<Vec<(String, core::Value)>> {
+    fields
+        .into_iter()
+        .map(|(name, value)| Ok((name, host_value(&value)?)))
+        .collect()
+}
+
 #[pyclass(module = "kernel._native", frozen, from_py_object)]
 #[derive(Clone)]
 struct Value(core::Value);
@@ -120,7 +131,7 @@ impl Value {
     #[staticmethod]
     #[pyo3(signature = (*, value))]
     fn from_python(value: &Bound<'_, PyAny>) -> PyResult<Self> {
-        Ok(Self(convert(value, &mut HashSet::new(), 0)?))
+        Ok(Self(host_value(value)?))
     }
     #[getter]
     fn kind(&self) -> &'static str {
@@ -170,8 +181,8 @@ impl Value {
         self.0.get(&path).cloned().map(Self)
     }
     #[pyo3(signature = (*, other))]
-    fn equal(&self, other: PyRef<'_, Self>) -> bool {
-        self.0.equal(&other.0)
+    fn equal(&self, other: &Bound<'_, PyAny>) -> PyResult<bool> {
+        Ok(self.0.equal(&host_value(other)?))
     }
 }
 
@@ -225,24 +236,30 @@ impl Predicate {
     }
     #[staticmethod]
     #[pyo3(signature = (*, path, expected))]
-    fn equals(path: Vec<String>, expected: Value) -> Self {
-        Self(core::Predicate::Equals {
+    fn equals(path: Vec<String>, expected: &Bound<'_, PyAny>) -> PyResult<Self> {
+        Ok(Self(core::Predicate::Equals {
             path,
-            expected: expected.0,
-        })
+            expected: host_value(expected)?,
+        }))
     }
     #[staticmethod]
     #[pyo3(signature = (*, path, allowed))]
-    fn within(path: Vec<String>, allowed: Vec<Value>) -> Self {
-        Self(core::Predicate::Within {
+    fn within(path: Vec<String>, allowed: Vec<Bound<'_, PyAny>>) -> PyResult<Self> {
+        Ok(Self(core::Predicate::Within {
             path,
-            allowed: allowed.into_iter().map(|item| item.0).collect(),
-        })
+            allowed: allowed
+                .iter()
+                .map(host_value)
+                .collect::<PyResult<Vec<_>>>()?,
+        }))
     }
     #[staticmethod]
     #[pyo3(signature = (*, path, item))]
-    fn contains(path: Vec<String>, item: Value) -> Self {
-        Self(core::Predicate::Contains { path, item: item.0 })
+    fn contains(path: Vec<String>, item: &Bound<'_, PyAny>) -> PyResult<Self> {
+        Ok(Self(core::Predicate::Contains {
+            path,
+            item: host_value(item)?,
+        }))
     }
     #[staticmethod]
     #[pyo3(signature = (*, path, min_words, max_words))]
@@ -288,8 +305,8 @@ impl Predicate {
         }))
     }
     #[pyo3(signature = (*, observation))]
-    fn holds(&self, observation: PyRef<'_, Value>) -> bool {
-        self.0.holds(&observation.0)
+    fn holds(&self, observation: &Bound<'_, PyAny>) -> PyResult<bool> {
+        Ok(self.0.holds(&host_value(observation)?))
     }
     #[getter]
     fn kind(&self) -> &'static str {
@@ -426,21 +443,20 @@ impl Outcome {
     fn new(
         changed_files: Vec<String>,
         verification: Verification,
-        response: Value,
-        facts: Vec<(String, Value)>,
+        response: &Bound<'_, PyAny>,
+        facts: Vec<(String, Bound<'_, PyAny>)>,
     ) -> PyResult<Self> {
-        check_value_depth(&response.0, 1)?;
+        let response = host_value(response)?;
+        let facts = host_fields(facts)?;
+        check_value_depth(&response, 1)?;
         for (_, value) in &facts {
-            check_value_depth(&value.0, 1)?;
+            check_value_depth(value, 1)?;
         }
         Ok(Self(core::Outcome {
             changed_files,
             verification: verification.0,
-            response: response.0,
-            facts: facts
-                .into_iter()
-                .map(|(name, value)| (name, value.0))
-                .collect(),
+            response,
+            facts,
         }))
     }
     #[getter]
@@ -479,8 +495,11 @@ struct Assessment(core::Assessment);
 impl Assessment {
     #[new]
     #[pyo3(signature = (*, predicate, observation))]
-    fn new(predicate: Predicate, observation: Value) -> Self {
-        Self(core::Assessment::new(predicate.0, observation.0))
+    fn new(predicate: Predicate, observation: &Bound<'_, PyAny>) -> PyResult<Self> {
+        Ok(Self(core::Assessment::new(
+            predicate.0,
+            host_value(observation)?,
+        )))
     }
     fn passed(&self) -> bool {
         self.0.passed()
@@ -653,14 +672,14 @@ struct Rubric(core::Rubric);
 impl Rubric {
     #[new]
     #[pyo3(signature = (*, expected, text_rule))]
-    fn new(expected: Vec<(String, Value)>, text_rule: Option<TextRule>) -> Self {
-        Self(core::Rubric {
-            expected: expected
-                .into_iter()
-                .map(|(name, value)| (name, value.0))
-                .collect(),
+    fn new(
+        expected: Vec<(String, Bound<'_, PyAny>)>,
+        text_rule: Option<TextRule>,
+    ) -> PyResult<Self> {
+        Ok(Self(core::Rubric {
+            expected: host_fields(expected)?,
             text_rule: text_rule.map(|rule| rule.0),
-        })
+        }))
     }
     #[getter]
     fn expected(&self, py: Python<'_>) -> PyResult<Py<PyTuple>> {
@@ -749,7 +768,7 @@ impl Reference {
     fn new(edits: Vec<SourceFile>, completion: &Bound<'_, PyAny>) -> PyResult<Self> {
         Ok(Self(core::Reference {
             edits: edits.into_iter().map(|file| file.0).collect(),
-            completion: Value::from_python(completion)?.0,
+            completion: host_value(completion)?,
         }))
     }
     #[getter]

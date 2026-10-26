@@ -307,8 +307,12 @@ RSpec.describe GeniusBench::Value do
       expect(duplicate).not_to equal(kernel(GeniusBench::Record.new(fields: [["x", 1], ["x", 2]])))
     end
 
-    it "rejects a value that is not a Value", contract: true do
-      expect { duplicate.equal_to?(other: 1) }.to raise_error(TypeError)
+    it "compares a native value" do
+      expect(kernel({"x" => 1})).to be_equal_to(other: {"x" => 1})
+    end
+
+    it "rejects an unsupported value", contract: true do
+      expect { duplicate.equal_to?(other: Object.new) }.to raise_error(TypeError)
     end
   end
 

@@ -12,7 +12,6 @@ from kernel import (
     Reference,
     Rubric,
     Task,
-    Value,
     Verification,
 )
 
@@ -21,9 +20,7 @@ task = Task(
     fixture=[],
     instruction=Instruction(prompt="What is six times seven?"),
     criterion=Criterion.answer(
-        rubric=Rubric(
-            expected=[("answer", Value.from_python(value=42))], text_rule=None
-        )
+        rubric=Rubric(expected=[("answer", 42)], text_rule=None)
     ),
     allowed_files=[],
     reference=Reference(edits=[], completion={"answer": 42}),
@@ -31,7 +28,7 @@ task = Task(
 outcome = Outcome(
     changed_files=[],
     verification=Verification.unchecked(),
-    response=Value.from_python(value={"answer": 42}),
+    response={"answer": 42},
     facts=[],
 )
 assessment = task.assess(outcome=outcome)
@@ -60,10 +57,15 @@ directories. Path validation issues retain the `fixture` field label across
 fixture, allowed-file, and reference-edit paths. Walk `assessment.checks` to its
 leaves and call `observed()` to inspect the values behind failed checks.
 
-`Reference(completion=...)` accepts native Python values and converts them to
-an immutable kernel `Value`; `Task.grade_reference(verification=...)` grades the
-reference edits and completion after the harness supplies a verification status.
-`Value.from_python(value=...)` is the explicit host-value boundary elsewhere. It accepts
+Every value parameter accepts native Python values and converts them to an
+immutable kernel `Value`: `Reference(completion=...)`, `Rubric(expected=...)`,
+`Predicate.equals`, `Predicate.within`, `Predicate.contains`,
+`Predicate.holds`, `Outcome(response=..., facts=...)`,
+`Assessment(observation=...)`, and `Value.equal(other=...)`. Existing `Value`
+instances pass through unchanged. `Task.grade_reference(verification=...)`
+grades the reference edits and completion after the harness supplies a
+verification status. `Value.from_python(value=...)` performs the same
+conversion when a host needs the kernel `Value` itself. Conversion accepts
 null, booleans, signed i64 integers, floats, strings, lists, tuples, string-keyed
 dictionaries, native values, and objects implementing `__kernel_value__()`.
 `KernelValue` describes that protocol. Booleans, integers, and floats remain

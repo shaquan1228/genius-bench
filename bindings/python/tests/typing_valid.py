@@ -65,4 +65,19 @@ source: tuple[str, str] = (version(), source_hash())
 required: tuple[str, str] = REQUIRED_SCORES
 present: Predicate = Predicate.present(path=["response"])
 passed: bool = present.holds(observation=outcome.observation())
+native_rubric = Rubric(expected=[("answer", 42)], text_rule=None)
+native_outcome = Outcome(
+    changed_files=[],
+    verification=Verification.unchecked(),
+    response={"answer": 42},
+    facts=[("state", {"balance": 5})],
+)
+native_checks: tuple[Predicate, ...] = (
+    Predicate.equals(path=["response", "answer"], expected=42),
+    Predicate.within(path=["response", "answer"], allowed=[41, 42]),
+    Predicate.contains(path=["response", "items"], item="x"),
+)
+native_assessment = Assessment(predicate=present, observation={"response": None})
+native_holds: bool = present.holds(observation={"response": None})
+native_equal: bool = value.equal(other={"answer": 42})
 pydantic_value: Value = from_pydantic(value=object())

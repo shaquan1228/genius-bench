@@ -15,9 +15,7 @@ task = GeniusBench::Task.new(
   fixture: [],
   instruction: GeniusBench::Instruction.new(prompt: "What is six times seven?"),
   criterion: GeniusBench::Criterion.answer(
-    rubric: GeniusBench::Rubric.new(
-      expected: {answer: GeniusBench::Value.from_ruby(value: 42)}, text_rule: nil
-    )
+    rubric: GeniusBench::Rubric.new(expected: {answer: 42}, text_rule: nil)
   ),
   allowed_files: [],
   reference: GeniusBench::Reference.new(
@@ -27,7 +25,7 @@ task = GeniusBench::Task.new(
 outcome = GeniusBench::Outcome.new(
   changed_files: [],
   verification: GeniusBench::Verification.unchecked,
-  response: GeniusBench::Value.from_ruby(value: {"answer" => 42}),
+  response: {"answer" => 42},
   facts: {}
 )
 assessment = task.assess(outcome: outcome)
@@ -41,15 +39,19 @@ task.grade_reference(verification: GeniusBench::Verification.unchecked) # => [["
 harness executes the verifier and supplies its `Verification` status.
 `REQUIRED_SCORES` and `NESTING_LIMIT` come from the core.
 
-`Reference.new(completion:)` accepts native Ruby values and converts them to
-an immutable kernel `Value`. `Task#grade_reference(verification:)` grades the
-reference edits and completion after the harness supplies a verification status.
+`Task#grade_reference(verification:)` grades the reference edits and
+completion after the harness supplies a verification status.
 
 ## Values
 
-`Reference.new(completion:)` accepts native Ruby values directly. Use
-`Value.from_ruby(value:)` to explicitly convert values for other binding inputs.
-It accepts nil, booleans, 64-bit integers, floats, UTF-8-compatible strings,
+Every value parameter accepts native Ruby values and converts them to an
+immutable kernel `Value`: `Reference.new(completion:)`,
+`Rubric.new(expected:)`, `Predicate.equals`, `Predicate.within`,
+`Predicate.contains`, `Predicate#holds?`, `Outcome.new(response:, facts:)`,
+`Assessment.new(observation:)`, and `Value#equal_to?(other:)`. Existing
+`Value` instances pass through unchanged. `Value.from_ruby(value:)` performs
+the same conversion when a host needs the kernel `Value` itself. Conversion
+accepts nil, booleans, 64-bit integers, floats, UTF-8-compatible strings,
 arrays, hashes with String or Symbol names, native values, and objects
 responding to `to_kernel_value`. Names must be distinct after Symbol conversion.
 Integers and strings are not coerced through `to_int` or `to_str`. Cycles and

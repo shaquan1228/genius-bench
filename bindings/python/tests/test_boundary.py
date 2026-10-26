@@ -326,6 +326,60 @@ def test_reference_grading_uses_edits_and_verification():
         )
 
 
+def test_value_parameters_accept_native_values():
+    native = {"answer": 42, "items": [1, "x"]}
+    value = k.Value.from_python(value=native)
+    for given in (native, value):
+        assert k.Predicate.equals(path=[], expected=given).expected.equal(other=value)
+        assert k.Predicate.contains(path=[], item=given).item.equal(other=value)
+        assert k.Predicate.within(path=[], allowed=[given])
+        assert (
+            k.Rubric(expected=[("answer", given)], text_rule=None)
+            .expected[0][1]
+            .equal(other=value)
+        )
+        outcome = k.Outcome(
+            changed_files=[],
+            verification=k.Verification.unchecked(),
+            response=given,
+            facts=[("state", given)],
+        )
+        assert outcome.response.equal(other=value)
+        assert outcome.facts[0][1].equal(other=value)
+        present = k.Predicate.present(path=["answer"])
+        assert present.holds(observation=given)
+        assert k.Assessment(predicate=present, observation=given).passed()
+        assert value.equal(other=given)
+    allowed = k.Predicate.within(path=[], allowed=[1, "x", None]).allowed
+    assert [item.scalar for item in allowed] == [1, "x", None]
+    present = k.Predicate.present(path=[])
+    for build in (
+        lambda bad: k.Predicate.equals(path=[], expected=bad),
+        lambda bad: k.Predicate.within(path=[], allowed=[bad]),
+        lambda bad: k.Predicate.contains(path=[], item=bad),
+        lambda bad: present.holds(observation=bad),
+        lambda bad: k.Rubric(expected=[("answer", bad)], text_rule=None),
+        lambda bad: k.Outcome(
+            changed_files=[],
+            verification=k.Verification.unchecked(),
+            response=bad,
+            facts=[],
+        ),
+        lambda bad: k.Outcome(
+            changed_files=[],
+            verification=k.Verification.unchecked(),
+            response=None,
+            facts=[("state", bad)],
+        ),
+        lambda bad: k.Assessment(predicate=present, observation=bad),
+        lambda bad: k.Value.from_python(value=None).equal(other=bad),
+    ):
+        with pytest.raises(TypeError):
+            build(object())
+        with pytest.raises(OverflowError):
+            build(2**64)
+
+
 def test_compiler_free_source_identity():
     import os
     import shutil
