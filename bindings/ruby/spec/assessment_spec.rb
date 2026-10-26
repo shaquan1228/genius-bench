@@ -36,6 +36,12 @@ RSpec.describe GeniusBench::Assessment do
       expect(assessment.checks[1][1].predicate.kind).to eq("equals")
     end
 
+    context "with a native observation" do
+      subject(:assessment) { described_class.new(predicate: condition, observation: {"response" => {"answer" => 42, "reason" => "six sevens"}}) }
+
+      it { is_expected.to be_passed }
+    end
+
     context "with a single predicate" do
       subject(:assessment) { described_class.new(predicate: GeniusBench::Predicate.present(path: ["response"]), observation: observation) }
 

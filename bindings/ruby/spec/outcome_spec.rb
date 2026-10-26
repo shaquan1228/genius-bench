@@ -32,8 +32,22 @@ RSpec.describe GeniusBench::Outcome do
       end
     end
 
-    context "with a fact value that is not a Value", contract: true do
-      let(:facts) { [["response", nil]] }
+    context "with a native response and facts" do
+      subject(:outcome) do
+        build_outcome(response: {"answer" => 42}, facts: {state: {"balance" => 5}})
+      end
+
+      it "converts the response" do
+        expect(outcome.response.get(path: ["answer"]).scalar).to eq(42)
+      end
+
+      it "converts the facts" do
+        expect(outcome.facts[0][1].get(path: ["balance"]).scalar).to eq(5)
+      end
+    end
+
+    context "with an unsupported fact value", contract: true do
+      let(:facts) { [["state", Object.new]] }
 
       it "raises TypeError" do
         expect { outcome }.to raise_error(TypeError)

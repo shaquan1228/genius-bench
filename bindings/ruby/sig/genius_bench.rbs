@@ -26,7 +26,7 @@ module GeniusBench
     def items: () -> Array[Value]
     def fields: () -> Array[[String, Value]]
     def get: (path: Array[String]) -> Value?
-    def equal_to?: (other: Value) -> bool
+    def equal_to?: (other: kernel_input) -> bool
     def ==: (untyped other) -> bool
     def eql?: (untyped other) -> bool
     def hash: () -> Integer
@@ -45,14 +45,14 @@ module GeniusBench
 
   class Predicate
     def self.present: (path: Array[String]) -> Predicate
-    def self.equals: (path: Array[String], expected: Value) -> Predicate
-    def self.within: (path: Array[String], allowed: Array[Value]) -> Predicate
-    def self.contains: (path: Array[String], item: Value) -> Predicate
+    def self.equals: (path: Array[String], expected: kernel_input) -> Predicate
+    def self.within: (path: Array[String], allowed: Array[kernel_input]) -> Predicate
+    def self.contains: (path: Array[String], item: kernel_input) -> Predicate
     def self.words: (path: Array[String], min_words: Integer, max_words: Integer) -> Predicate
     def self.all: (checks: named[Predicate]) -> Predicate
     def self.any: (checks: named[Predicate]) -> Predicate
     def self.not: (check: Predicate) -> Predicate
-    def holds?: (observation: Value) -> bool
+    def holds?: (observation: kernel_input) -> bool
     def kind: () -> predicate_kind
     def path: () -> Array[String]?
     def expected: () -> Value?
@@ -84,7 +84,7 @@ module GeniusBench
   end
 
   class Outcome
-    def self.new: (changed_files: Array[String], verification: Verification, response: Value, facts: named[Value]) -> Outcome
+    def self.new: (changed_files: Array[String], verification: Verification, response: kernel_input, facts: named[kernel_input]) -> Outcome
     def changed_files: () -> Array[String]
     def verification: () -> Verification
     def response: () -> Value
@@ -97,7 +97,7 @@ module GeniusBench
   end
 
   class Assessment
-    def self.new: (predicate: Predicate, observation: Value) -> Assessment
+    def self.new: (predicate: Predicate, observation: kernel_input) -> Assessment
     def passed?: () -> bool
     def observed: () -> Value?
     def scores: () -> scores
@@ -156,7 +156,7 @@ module GeniusBench
   end
 
   class Rubric
-    def self.new: (expected: named[Value], text_rule: TextRule?) -> Rubric
+    def self.new: (expected: named[kernel_input], text_rule: TextRule?) -> Rubric
     def expected: () -> Array[[String, Value]]
     def text_rule: () -> TextRule?
     def ==: (untyped other) -> bool

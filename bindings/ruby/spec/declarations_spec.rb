@@ -122,9 +122,17 @@ RSpec.describe GeniusBench::Rubric do
       expect(scalars_of(rubric.expected)).to eq([["answer", 42]])
     end
 
-    context "with an expected value that is not a Value", contract: true do
+    context "with a native expected value" do
+      subject(:rubric) { described_class.new(expected: {answer: 42}, text_rule: nil) }
+
+      it "converts the expected value" do
+        expect(scalars_of(rubric.expected)).to eq([["answer", 42]])
+      end
+    end
+
+    context "with an unsupported expected value", contract: true do
       it "raises TypeError" do
-        expect { described_class.new(expected: [["answer", 1]], text_rule: nil) }.to raise_error(TypeError)
+        expect { described_class.new(expected: [["answer", Object.new]], text_rule: nil) }.to raise_error(TypeError)
       end
     end
 

@@ -26,6 +26,10 @@ RSpec.describe GeniusBench::Predicate do
       it("does not hold") { is_expected.not_to be_holds(observation: observation) }
     end
 
+    context "with a native observation" do
+      it("holds") { is_expected.to be_holds(observation: {"present" => 1}) }
+    end
+
     context "with a non-string path element", contract: true do
       it "raises TypeError" do
         expect { described_class.present(path: [1]) }.to raise_error(TypeError)
@@ -62,6 +66,12 @@ RSpec.describe GeniusBench::Predicate do
 
       it("does not hold") { is_expected.not_to be_holds(observation: observation) }
     end
+
+    context "with a native expected value" do
+      subject { described_class.equals(path: ["nested"], expected: {"k" => nil}) }
+
+      it("holds") { is_expected.to be_holds(observation: observation) }
+    end
   end
 
   describe ".within" do
@@ -72,6 +82,12 @@ RSpec.describe GeniusBench::Predicate do
 
     it "exposes the allowed values" do
       expect(predicate.allowed.map(&:scalar)).to eq([1, "x"])
+    end
+
+    context "with native allowed values" do
+      subject { described_class.within(path: ["list"], allowed: [1, "x"]) }
+
+      it("holds") { is_expected.to be_holds(observation: observation) }
     end
   end
 
@@ -89,6 +105,18 @@ RSpec.describe GeniusBench::Predicate do
       subject { described_class.contains(path: ["list"], item: kernel(1.0)) }
 
       it("does not hold") { is_expected.not_to be_holds(observation: observation) }
+    end
+
+    context "with a native item" do
+      subject { described_class.contains(path: ["list"], item: "x") }
+
+      it("holds") { is_expected.to be_holds(observation: observation) }
+    end
+
+    context "with an unsupported item", contract: true do
+      it "raises TypeError" do
+        expect { described_class.contains(path: ["list"], item: Object.new) }.to raise_error(TypeError)
+      end
     end
   end
 

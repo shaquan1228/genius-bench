@@ -301,6 +301,17 @@ fn convert(
     result
 }
 
+fn host_value(ruby: &Ruby, value: RValue) -> Result<core::Value, Error> {
+    convert(ruby, value, &mut HashSet::new(), 0)
+}
+
+fn host_values(ruby: &Ruby, value: RValue) -> Result<Vec<core::Value>, Error> {
+    let items = list(ruby, value)?;
+    (0..items.len())
+        .map(|index| host_value(ruby, items.entry(index as isize)?))
+        .collect()
+}
+
 #[magnus::wrap(class = "GeniusBench::Value", free_immediately, size)]
 #[derive(Clone)]
 struct Value(core::Value);
@@ -380,9 +391,9 @@ fn value_get(ruby: &Ruby, this: &Value, args: &[RValue]) -> Result<Option<Obj<Va
         .map(|value| frozen(ruby, Value(value.clone()))))
 }
 
-fn value_equal_to(this: &Value, args: &[RValue]) -> Result<bool, Error> {
-    let (other,): (Obj<Value>,) = required(args, &["other"])?;
-    Ok(this.0.equal(&other.0))
+fn value_equal_to(ruby: &Ruby, this: &Value, args: &[RValue]) -> Result<bool, Error> {
+    let (other,): (RValue,) = required(args, &["other"])?;
+    Ok(this.0.equal(&host_value(ruby, other)?))
 }
 
 #[magnus::wrap(class = "GeniusBench::Record", free_immediately, size)]
@@ -421,12 +432,12 @@ fn predicate_present(ruby: &Ruby, args: &[RValue]) -> Result<Obj<Predicate>, Err
 }
 
 fn predicate_equals(ruby: &Ruby, args: &[RValue]) -> Result<Obj<Predicate>, Error> {
-    let (path, expected): (RValue, Obj<Value>) = required(args, &["path", "expected"])?;
+    let (path, expected): (RValue, RValue) = required(args, &["path", "expected"])?;
     Ok(frozen(
         ruby,
         Predicate(core::Predicate::Equals {
             path: texts(ruby, path)?,
-            expected: expected.0.clone(),
+            expected: host_value(ruby, expected)?,
         }),
     ))
 }
@@ -437,21 +448,18 @@ fn predicate_within(ruby: &Ruby, args: &[RValue]) -> Result<Obj<Predicate>, Erro
         ruby,
         Predicate(core::Predicate::Within {
             path: texts(ruby, path)?,
-            allowed: objects::<Value>(ruby, allowed)?
-                .into_iter()
-                .map(|item| item.0)
-                .collect(),
+            allowed: host_values(ruby, allowed)?,
         }),
     ))
 }
 
 fn predicate_contains(ruby: &Ruby, args: &[RValue]) -> Result<Obj<Predicate>, Error> {
-    let (path, item): (RValue, Obj<Value>) = required(args, &["path", "item"])?;
+    let (path, item): (RValue, RValue) = required(args, &["path", "item"])?;
     Ok(frozen(
         ruby,
         Predicate(core::Predicate::Contains {
             path: texts(ruby, path)?,
-            item: item.0.clone(),
+            item: host_value(ruby, item)?,
         }),
     ))
 }
@@ -501,9 +509,9 @@ fn predicate_not(ruby: &Ruby, args: &[RValue]) -> Result<Obj<Predicate>, Error> 
     ))
 }
 
-fn predicate_holds(this: &Predicate, args: &[RValue]) -> Result<bool, Error> {
-    let (observation,): (Obj<Value>,) = required(args, &["observation"])?;
-    Ok(this.0.holds(&observation.0))
+fn predicate_holds(ruby: &Ruby, this: &Predicate, args: &[RValue]) -> Result<bool, Error> {
+    let (observation,): (RValue,) = required(args, &["observation"])?;
+    Ok(this.0.holds(&host_value(ruby, observation)?))
 }
 
 fn predicate_kind(ruby: &Ruby, this: &Predicate) -> RString {
@@ -641,24 +649,25 @@ fn outcome_new(ruby: &Ruby, args: &[RValue]) -> Result<Obj<Outcome>, Error> {
     let (changed_files, verification, response, facts): (
         RValue,
         Obj<Verification>,
-        Obj<Value>,
+        RValue,
         RValue,
     ) = required(
         args,
         &["changed_files", "verification", "response", "facts"],
     )?;
-    check_value_depth(ruby, &response.0, 1)?;
+    let response = host_value(ruby, response)?;
+    check_value_depth(ruby, &response, 1)?;
     let facts = named(ruby, facts, |item| {
-        let value = <&Value>::try_convert(item)?;
-        check_value_depth(ruby, &value.0, 1)?;
-        Ok(value.0.clone())
+        let value = host_value(ruby, item)?;
+        check_value_depth(ruby, &value, 1)?;
+        Ok(value)
     })?;
     Ok(frozen(
         ruby,
         Outcome(core::Outcome {
             changed_files: texts(ruby, changed_files)?,
             verification: verification.0.clone(),
-            response: response.0.clone(),
+            response,
             facts,
         }),
     ))
@@ -690,13 +699,13 @@ struct Assessment(core::Assessment);
 wrapped!(Assessment, core::Assessment);
 
 fn assessment_new(ruby: &Ruby, args: &[RValue]) -> Result<Obj<Assessment>, Error> {
-    let (predicate, observation): (Obj<Predicate>, Obj<Value>) =
+    let (predicate, observation): (Obj<Predicate>, RValue) =
         required(args, &["predicate", "observation"])?;
     Ok(frozen(
         ruby,
         Assessment(core::Assessment::new(
             predicate.0.clone(),
-            observation.0.clone(),
+            host_value(ruby, observation)?,
         )),
     ))
 }
@@ -912,9 +921,7 @@ wrapped!(Rubric, core::Rubric);
 fn rubric_new(ruby: &Ruby, args: &[RValue]) -> Result<Obj<Rubric>, Error> {
     let (expected, text_rule): (RValue, Option<Obj<TextRule>>) =
         required(args, &["expected", "text_rule"])?;
-    let expected = named(ruby, expected, |item| {
-        Ok(<&Value>::try_convert(item)?.0.clone())
-    })?;
+    let expected = named(ruby, expected, |item| host_value(ruby, item))?;
     Ok(frozen(
         ruby,
         Rubric(core::Rubric {
@@ -1020,7 +1027,7 @@ fn reference_new(ruby: &Ruby, args: &[RValue]) -> Result<Obj<Reference>, Error> 
                 .into_iter()
                 .map(|file| file.0)
                 .collect(),
-            completion: convert(ruby, completion, &mut HashSet::new(), 0)?,
+            completion: host_value(ruby, completion)?,
         }),
     ))
 }
