@@ -13,30 +13,65 @@ module GeniusBench
 
   type scalar = nil | bool | Integer | Float | String
   type kernel_input = scalar | Array[kernel_input] | Hash[String | Symbol, kernel_input] | Value | Record | _KernelValue
-  type value_kind = "null" | "bool" | "int" | "float" | "string" | "list" | "record"
-  type predicate_kind = "present" | "equals" | "within" | "contains" | "words" | "all" | "any" | "not"
   type verification_status = "unchecked" | "passed" | "failed" | "invalid_submission" | "timed_out" | "harness_error"
   type scores = Array[[String, bool]]
   type named[T] = Array[[String | Symbol, T]] | Hash[String | Symbol, T]
 
   class Value
     def self.from_ruby: (value: kernel_input) -> Value
-    def kind: () -> value_kind
-    def scalar: () -> scalar
-    def items: () -> Array[Value]
-    def fields: () -> Array[[String, Value]]
-    def get: (path: Array[String]) -> Value?
+    def get: (path: Array[::String]) -> Value?
     def equal_to?: (other: kernel_input) -> bool
     def ==: (untyped other) -> bool
     def eql?: (untyped other) -> bool
     def hash: () -> Integer
-    def inspect: () -> String
+    def inspect: () -> ::String
+
+    class Null < Value
+      def self.new: () -> Null
+      def deconstruct_keys: (Array[Symbol]? keys) -> Hash[Symbol, bot]
+    end
+
+    class Bool < Value
+      def self.new: (value: bool) -> Bool
+      def value: () -> bool
+      def deconstruct_keys: (Array[Symbol]? keys) -> { value: bool }
+    end
+
+    class Int < Value
+      def self.new: (value: Integer) -> Int
+      def value: () -> Integer
+      def deconstruct_keys: (Array[Symbol]? keys) -> { value: Integer }
+    end
+
+    class Float < Value
+      def self.new: (value: ::Float) -> Float
+      def value: () -> ::Float
+      def deconstruct_keys: (Array[Symbol]? keys) -> { value: ::Float }
+    end
+
+    class String < Value
+      def self.new: (value: ::String) -> String
+      def value: () -> ::String
+      def deconstruct_keys: (Array[Symbol]? keys) -> { value: ::String }
+    end
+
+    class List < Value
+      def self.new: (items: Array[kernel_input]) -> List
+      def items: () -> Array[Value]
+      def deconstruct_keys: (Array[Symbol]? keys) -> { items: Array[Value] }
+    end
+
+    class Record < Value
+      def self.new: (fields: named[kernel_input]) -> Record
+      def fields: () -> Array[[::String, Value]]
+      def deconstruct_keys: (Array[Symbol]? keys) -> { fields: Array[[::String, Value]] }
+    end
   end
 
   class Record
     def self.new: (fields: named[kernel_input]) -> Record
     def fields: () -> Array[[String, Value]]
-    def to_kernel_value: () -> Value
+    def to_kernel_value: () -> Value::Record
     def ==: (untyped other) -> bool
     def eql?: (untyped other) -> bool
     def hash: () -> Integer
@@ -44,43 +79,103 @@ module GeniusBench
   end
 
   class Predicate
-    def self.present: (path: Array[String]) -> Predicate
-    def self.equals: (path: Array[String], expected: kernel_input) -> Predicate
-    def self.within: (path: Array[String], allowed: Array[kernel_input]) -> Predicate
-    def self.contains: (path: Array[String], item: kernel_input) -> Predicate
-    def self.words: (path: Array[String], min_words: Integer, max_words: Integer) -> Predicate
-    def self.all: (checks: named[Predicate]) -> Predicate
-    def self.any: (checks: named[Predicate]) -> Predicate
-    def self.not: (check: Predicate) -> Predicate
     def holds?: (observation: kernel_input) -> bool
-    def kind: () -> predicate_kind
-    def path: () -> Array[String]?
-    def expected: () -> Value?
-    def item: () -> Value?
-    def allowed: () -> Array[Value]?
-    def min_words: () -> Integer?
-    def max_words: () -> Integer?
-    def checks: () -> Array[[String, Predicate]]
-    def check: () -> Predicate?
     def ==: (untyped other) -> bool
     def eql?: (untyped other) -> bool
     def hash: () -> Integer
     def inspect: () -> String
+
+    class Present < Predicate
+      def self.new: (path: Array[String]) -> Present
+      def path: () -> Array[String]
+      def deconstruct_keys: (Array[Symbol]? keys) -> { path: Array[String] }
+    end
+
+    class Equals < Predicate
+      def self.new: (path: Array[String], expected: kernel_input) -> Equals
+      def path: () -> Array[String]
+      def expected: () -> Value
+      def deconstruct_keys: (Array[Symbol]? keys) -> { path: Array[String], expected: Value }
+    end
+
+    class Within < Predicate
+      def self.new: (path: Array[String], allowed: Array[kernel_input]) -> Within
+      def path: () -> Array[String]
+      def allowed: () -> Array[Value]
+      def deconstruct_keys: (Array[Symbol]? keys) -> { path: Array[String], allowed: Array[Value] }
+    end
+
+    class Contains < Predicate
+      def self.new: (path: Array[String], item: kernel_input) -> Contains
+      def path: () -> Array[String]
+      def item: () -> Value
+      def deconstruct_keys: (Array[Symbol]? keys) -> { path: Array[String], item: Value }
+    end
+
+    class Words < Predicate
+      def self.new: (path: Array[String], min_words: Integer, max_words: Integer) -> Words
+      def path: () -> Array[String]
+      def min_words: () -> Integer
+      def max_words: () -> Integer
+      def deconstruct_keys: (Array[Symbol]? keys) -> { path: Array[String], min_words: Integer, max_words: Integer }
+    end
+
+    class All < Predicate
+      def self.new: (checks: named[Predicate]) -> All
+      def checks: () -> Array[[String, Predicate]]
+      def deconstruct_keys: (Array[Symbol]? keys) -> { checks: Array[[String, Predicate]] }
+    end
+
+    class Any < Predicate
+      def self.new: (checks: named[Predicate]) -> Any
+      def checks: () -> Array[[String, Predicate]]
+      def deconstruct_keys: (Array[Symbol]? keys) -> { checks: Array[[String, Predicate]] }
+    end
+
+    class Not < Predicate
+      def self.new: (check: Predicate) -> Not
+      def check: () -> Predicate
+      def deconstruct_keys: (Array[Symbol]? keys) -> { check: Predicate }
+    end
   end
 
   class Verification
-    def self.unchecked: () -> Verification
-    def self.passed: () -> Verification
-    def self.failed: () -> Verification
-    def self.invalid_submission: () -> Verification
-    def self.timed_out: () -> Verification
-    def self.harness_error: (detail: String) -> Verification
     def status: () -> verification_status
-    def detail: () -> String?
     def ==: (untyped other) -> bool
     def eql?: (untyped other) -> bool
     def hash: () -> Integer
     def inspect: () -> String
+
+    class Unchecked < Verification
+      def self.new: () -> Unchecked
+      def deconstruct_keys: (Array[Symbol]? keys) -> Hash[Symbol, bot]
+    end
+
+    class Passed < Verification
+      def self.new: () -> Passed
+      def deconstruct_keys: (Array[Symbol]? keys) -> Hash[Symbol, bot]
+    end
+
+    class Failed < Verification
+      def self.new: () -> Failed
+      def deconstruct_keys: (Array[Symbol]? keys) -> Hash[Symbol, bot]
+    end
+
+    class InvalidSubmission < Verification
+      def self.new: () -> InvalidSubmission
+      def deconstruct_keys: (Array[Symbol]? keys) -> Hash[Symbol, bot]
+    end
+
+    class TimedOut < Verification
+      def self.new: () -> TimedOut
+      def deconstruct_keys: (Array[Symbol]? keys) -> Hash[Symbol, bot]
+    end
+
+    class HarnessError < Verification
+      def self.new: (detail: String) -> HarnessError
+      def detail: () -> String
+      def deconstruct_keys: (Array[Symbol]? keys) -> { detail: String }
+    end
   end
 
   class Outcome
@@ -97,18 +192,27 @@ module GeniusBench
   end
 
   class Assessment
-    def self.new: (predicate: Predicate, observation: kernel_input) -> Assessment
+    def self.new: (predicate: Predicate, observation: kernel_input) -> (Check | All)
     def passed?: () -> bool
     def observed: () -> Value?
     def scores: () -> scores
-    def kind: () -> ("check" | "all")
-    def predicate: () -> Predicate?
-    def observation: () -> Value?
-    def checks: () -> Array[[String, Assessment]]
     def ==: (untyped other) -> bool
     def eql?: (untyped other) -> bool
     def hash: () -> Integer
     def inspect: () -> String
+
+    class Check < Assessment
+      def self.new: (predicate: Predicate, observation: kernel_input) -> Check
+      def predicate: () -> Predicate
+      def observation: () -> Value
+      def deconstruct_keys: (Array[Symbol]? keys) -> { predicate: Predicate, observation: Value }
+    end
+
+    class All < Assessment
+      def self.new: (checks: named[Assessment]) -> All
+      def checks: () -> Array[[String, Assessment]]
+      def deconstruct_keys: (Array[Symbol]? keys) -> { checks: Array[[String, Assessment]] }
+    end
   end
 
   class SourceFile
@@ -166,18 +270,29 @@ module GeniusBench
   end
 
   class Criterion
-    def self.code: (verifier: Verifier) -> Criterion
-    def self.answer: (rubric: Rubric) -> Criterion
-    def self.state: (predicate: Predicate) -> Criterion
     def condition: () -> Predicate
-    def kind: () -> ("code" | "answer" | "state")
-    def verifier: () -> Verifier?
-    def rubric: () -> Rubric?
-    def predicate: () -> Predicate?
     def ==: (untyped other) -> bool
     def eql?: (untyped other) -> bool
     def hash: () -> Integer
     def inspect: () -> String
+
+    class Code < Criterion
+      def self.new: (verifier: Verifier) -> Code
+      def verifier: () -> Verifier
+      def deconstruct_keys: (Array[Symbol]? keys) -> { verifier: Verifier }
+    end
+
+    class Answer < Criterion
+      def self.new: (rubric: Rubric) -> Answer
+      def rubric: () -> Rubric
+      def deconstruct_keys: (Array[Symbol]? keys) -> { rubric: Rubric }
+    end
+
+    class State < Criterion
+      def self.new: (predicate: Predicate) -> State
+      def predicate: () -> Predicate
+      def deconstruct_keys: (Array[Symbol]? keys) -> { predicate: Predicate }
+    end
   end
 
   class Reference

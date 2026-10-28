@@ -6,3 +6,4 @@ def invalid(task: Task, outcome: Outcome) -> None:
     task.id = "changed"
     Value.from_python(value=1).missing
     Instruction("positional")
+    outcome.verification.detail

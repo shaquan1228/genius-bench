@@ -2,6 +2,12 @@
 
 require "genius_bench"
 
+module KernelSpecSupport
+  def self.kernel_modules(namespace)
+    namespace.constants(false).map { |name| namespace.const_get(name) }.grep(Module).flat_map { |constant| [constant, *kernel_modules(constant)] }
+  end
+end
+
 if ENV["RBS_TEST"]
   require "pathname"
   require "rbs"
@@ -11,7 +17,7 @@ if ENV["RBS_TEST"]
   loader.add(path: Pathname(File.expand_path("../sig", __dir__)))
   tester = RBS::Test::Tester.new(env: RBS::Environment.from_loader(loader).resolve_type_names)
   RBS.logger_level = "warn"
-  [GeniusBench, *GeniusBench.constants.map { |name| GeniusBench.const_get(name) }.grep(Module)].each do |target|
+  [GeniusBench, *KernelSpecSupport.kernel_modules(GeniusBench)].each do |target|
     tester.install!(target, sample_size: nil, unchecked_classes: [])
   end
 end
@@ -22,7 +28,7 @@ module KernelSpecSupport
   end
 
   def state_task(
-    predicate: GeniusBench::Predicate.equals(path: %w[response answer], expected: kernel(42)),
+    predicate: GeniusBench::Predicate::Equals.new(path: %w[response answer], expected: kernel(42)),
     completion: nil,
     edits: [],
     allowed_files: []
@@ -31,20 +37,22 @@ module KernelSpecSupport
       id: "state",
       fixture: [],
       instruction: GeniusBench::Instruction.new(prompt: "observe"),
-      criterion: GeniusBench::Criterion.state(predicate: predicate),
+      criterion: GeniusBench::Criterion::State.new(predicate: predicate),
       allowed_files: allowed_files,
       reference: GeniusBench::Reference.new(edits: edits, completion: completion)
     )
   end
 
-  def build_outcome(response: kernel(nil), verification: GeniusBench::Verification.unchecked, facts: [], changed_files: [])
+  def build_outcome(response: kernel(nil), verification: GeniusBench::Verification::Unchecked.new, facts: [], changed_files: [])
     GeniusBench::Outcome.new(changed_files: changed_files, verification: verification, response: response, facts: facts)
   end
 
   def scalars_of(fields)
-    fields.map { |name, item| [name, item.scalar] }
+    fields.map { |name, item| [name, item.value] }
   end
 end
+
+RSpec::Matchers.define_negated_matcher :not_respond_to, :respond_to
 
 RSpec.configure do |config|
   config.disable_monkey_patching!

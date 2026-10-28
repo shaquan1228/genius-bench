@@ -50,7 +50,7 @@ RSpec.describe GeniusBench do
       subject { described_class.from_struct(value: answer.new(42)) }
 
       it "projects members into a record" do
-        expect(subject.get(path: ["answer"]).scalar).to eq(42)
+        expect(subject.get(path: ["answer"]).value).to eq(42)
       end
     end
 
@@ -58,7 +58,7 @@ RSpec.describe GeniusBench do
       subject { described_class.from_struct(value: parent.new(children: [answer.new(42)])) }
 
       it "projects every level" do
-        expect(subject.get(path: ["children"]).items[0].get(path: ["answer"]).scalar).to eq(42)
+        expect(subject.get(path: ["children"]).items[0].get(path: ["answer"]).value).to eq(42)
       end
     end
 

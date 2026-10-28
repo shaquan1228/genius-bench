@@ -7,7 +7,7 @@ RSpec.describe GeniusBench::Task do
         id: "code",
         fixture: fixture,
         instruction: GeniusBench::Instruction.new(prompt: "change"),
-        criterion: GeniusBench::Criterion.code(verifier: verifier),
+        criterion: GeniusBench::Criterion::Code.new(verifier: verifier),
         allowed_files: paths,
         reference: GeniusBench::Reference.new(edits: [], completion: kernel("secret"))
       )
@@ -102,7 +102,7 @@ RSpec.describe GeniusBench::Task do
             id: "bad id",
             fixture: [GeniusBench::SourceFile.new(path: "../bad", contents: "")],
             instruction: GeniusBench::Instruction.new(prompt: ""),
-            criterion: GeniusBench::Criterion.code(
+            criterion: GeniusBench::Criterion::Code.new(
               verifier: GeniusBench::Verifier.new(inputs: [], files: [], tools: [], command: [], stdin: "", timeout_seconds: 0)
             ),
             allowed_files: [],
@@ -146,7 +146,7 @@ RSpec.describe GeniusBench::Task do
     end
 
     context "with a predicate nested beyond the limit" do
-      let(:deep) { (1..256).reduce(GeniusBench::Predicate.present(path: [])) { |inner, _| GeniusBench::Predicate.not(check: inner) } }
+      let(:deep) { (1..256).reduce(GeniusBench::Predicate::Present.new(path: [])) { |inner, _| GeniusBench::Predicate::Not.new(check: inner) } }
 
       it "raises ArgumentError" do
         expect { state_task(predicate: deep) }.to raise_error(ArgumentError, /nesting/)
@@ -183,9 +183,9 @@ RSpec.describe GeniusBench::Task do
       expect { task.grade(graded) }.to raise_error(ArgumentError)
     end
 
-    %w[failed timed_out invalid_submission].each do |status|
-      context "when the verification #{status}" do
-        let(:outcome) { build_outcome(verification: GeniusBench::Verification.public_send(status)) }
+    %w[Failed TimedOut InvalidSubmission].each do |status|
+      context "when the verification is #{status}" do
+        let(:outcome) { build_outcome(verification: GeniusBench::Verification.const_get(status).new) }
 
         it "scores correctness false" do
           expect(task.grade(outcome: outcome)).to eq([["correctness", false], ["scope", true]])
@@ -194,7 +194,7 @@ RSpec.describe GeniusBench::Task do
     end
 
     context "when the harness failed" do
-      let(:outcome) { build_outcome(verification: GeniusBench::Verification.harness_error(detail: "worker missing")) }
+      let(:outcome) { build_outcome(verification: GeniusBench::Verification::HarnessError.new(detail: "worker missing")) }
       let(:error) do
         task.grade(outcome: outcome)
       rescue GeniusBench::GradingError => error
@@ -215,9 +215,9 @@ RSpec.describe GeniusBench::Task do
     end
 
     context "when the garbage collector is stressed" do
-      subject(:task) { state_task(predicate: GeniusBench::Predicate.all(checks: checks)) }
+      subject(:task) { state_task(predicate: GeniusBench::Predicate::All.new(checks: checks)) }
 
-      let(:checks) { Array.new(20) { |index| [index.to_s, GeniusBench::Predicate.present(path: ["response"])] } }
+      let(:checks) { Array.new(20) { |index| [index.to_s, GeniusBench::Predicate::Present.new(path: ["response"])] } }
       let(:entries) { Array.new(20) { |index| {"index" => index, "text" => "entry #{index}"} } }
       let(:assessment) { task.assess(outcome: build_outcome(response: kernel({"answer" => 42}))) }
 
@@ -245,7 +245,7 @@ RSpec.describe GeniusBench::Task do
   describe "#grade_reference" do
     subject(:task) do
       state_task(
-        predicate: GeniusBench::Predicate.equals(
+        predicate: GeniusBench::Predicate::Equals.new(
           path: ["changed_files"],
           expected: kernel(["solution.py"])
         ),
@@ -256,18 +256,18 @@ RSpec.describe GeniusBench::Task do
     end
 
     it "grades the stored reference" do
-      expect(task.grade_reference(verification: GeniusBench::Verification.unchecked)).to eq(
+      expect(task.grade_reference(verification: GeniusBench::Verification::Unchecked.new)).to eq(
         [["correctness", true], ["scope", true]]
       )
     end
 
     it "preserves harness failures" do
-      verification = GeniusBench::Verification.harness_error(detail: "worker missing")
+      verification = GeniusBench::Verification::HarnessError.new(detail: "worker missing")
       expect { task.grade_reference(verification: verification) }.to raise_error(GeniusBench::GradingError)
     end
 
     it "requires the verification keyword", contract: true do
-      expect { task.grade_reference(GeniusBench::Verification.unchecked) }.to raise_error(ArgumentError)
+      expect { task.grade_reference(GeniusBench::Verification::Unchecked.new) }.to raise_error(ArgumentError)
     end
   end
 

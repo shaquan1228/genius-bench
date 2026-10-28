@@ -64,7 +64,7 @@ RSpec.describe GeniusBench::Record do
       let(:deepest) { (1..256).reduce(kernel(nil)) { |inner, _| described_class.new(fields: [["x", inner]]) } }
 
       it "accepts the limit" do
-        expect(kernel(deepest).kind).to eq("record")
+        expect(kernel(deepest)).to be_a(GeniusBench::Value::Record)
       end
 
       it "rejects one more level" do
@@ -102,7 +102,7 @@ RSpec.describe GeniusBench::Record do
       end
 
       it "reads pairs natively" do
-        expect(described_class.new(fields: list.new([list.new(["x", 1])])).fields[0][1].scalar).to eq(1)
+        expect(described_class.new(fields: list.new([list.new(["x", 1])])).fields[0][1].value).to eq(1)
       end
     end
   end

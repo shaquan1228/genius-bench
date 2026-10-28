@@ -10,14 +10,14 @@ RSpec.describe "value identity" do
       id: "code",
       fixture: [file.call],
       instruction: GeniusBench::Instruction.new(prompt: "change"),
-      criterion: GeniusBench::Criterion.code(verifier: verifier.call),
+      criterion: GeniusBench::Criterion::Code.new(verifier: verifier.call),
       allowed_files: ["a.txt"],
       reference: GeniusBench::Reference.new(edits: [], completion: GeniusBench::Value.from_ruby(value: nil))
     )
   end
   outcome = lambda do
     GeniusBench::Outcome.new(
-      changed_files: [], verification: GeniusBench::Verification.passed, response: GeniusBench::Value.from_ruby(value: 1), facts: {}
+      changed_files: [], verification: GeniusBench::Verification::Passed.new, response: GeniusBench::Value.from_ruby(value: 1), facts: {}
     )
   end
   invalid = lambda do
@@ -25,7 +25,7 @@ RSpec.describe "value identity" do
       id: "bad id",
       fixture: [],
       instruction: GeniusBench::Instruction.new(prompt: "p"),
-      criterion: GeniusBench::Criterion.state(predicate: GeniusBench::Predicate.present(path: [])),
+      criterion: GeniusBench::Criterion::State.new(predicate: GeniusBench::Predicate::Present.new(path: [])),
       allowed_files: [],
       reference: GeniusBench::Reference.new(edits: [], completion: GeniusBench::Value.from_ruby(value: nil))
     )
@@ -36,16 +36,16 @@ RSpec.describe "value identity" do
   {
     GeniusBench::Value => -> { GeniusBench::Value.from_ruby(value: {"x" => [1, 2.5]}) },
     GeniusBench::Record => -> { GeniusBench::Record.new(fields: [["x", 1], ["x", 2]]) },
-    GeniusBench::Predicate => -> { GeniusBench::Predicate.words(path: ["t"], min_words: 1, max_words: 2) },
-    GeniusBench::Verification => -> { GeniusBench::Verification.harness_error(detail: "lost") },
+    GeniusBench::Predicate => -> { GeniusBench::Predicate::Words.new(path: ["t"], min_words: 1, max_words: 2) },
+    GeniusBench::Verification => -> { GeniusBench::Verification::HarnessError.new(detail: "lost") },
     GeniusBench::Outcome => outcome,
-    GeniusBench::Assessment => -> { GeniusBench::Assessment.new(predicate: GeniusBench::Predicate.present(path: []), observation: GeniusBench::Value.from_ruby(value: 1)) },
+    GeniusBench::Assessment => -> { GeniusBench::Assessment.new(predicate: GeniusBench::Predicate::Present.new(path: []), observation: GeniusBench::Value.from_ruby(value: 1)) },
     GeniusBench::SourceFile => file,
     GeniusBench::Instruction => -> { GeniusBench::Instruction.new(prompt: "change") },
     GeniusBench::Verifier => verifier,
     GeniusBench::TextRule => -> { GeniusBench::TextRule.new(field: "reason", min_words: 1, max_words: 5) },
     GeniusBench::Rubric => rubric,
-    GeniusBench::Criterion => -> { GeniusBench::Criterion.answer(rubric: rubric.call) },
+    GeniusBench::Criterion => -> { GeniusBench::Criterion::Answer.new(rubric: rubric.call) },
     GeniusBench::Reference => -> { GeniusBench::Reference.new(edits: [file.call], completion: GeniusBench::Value.from_ruby(value: "done")) },
     GeniusBench::Case => -> { task.call.project },
     GeniusBench::Issue => invalid,
@@ -74,7 +74,8 @@ RSpec.describe "value identity" do
 
       describe "#inspect" do
         it "names the class" do
-          expect(object.inspect).to start_with("#<#{klass} ")
+          expect(object.inspect).to start_with("#<#{object.class} ")
+          expect(object).to be_a(klass)
         end
       end
     end
@@ -82,7 +83,7 @@ RSpec.describe "value identity" do
 
   describe GeniusBench::Verification do
     it "distinguishes statuses" do
-      expect(described_class.passed).not_to eq(described_class.failed)
+      expect(described_class::Passed.new).not_to eq(described_class::Failed.new)
     end
   end
 end

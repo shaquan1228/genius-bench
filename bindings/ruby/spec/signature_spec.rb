@@ -10,12 +10,12 @@ RSpec.describe "sig/genius_bench.rbs" do
   loader = RBS::EnvironmentLoader.new
   loader.add(path: signatures)
   environment = RBS::Environment.from_loader(loader).resolve_type_names
-  declared = environment.class_decls.select { |name, _| name.namespace.to_s == "::GeniusBench::" || name.to_s == "::GeniusBench" }
+  declared = environment.class_decls.select { |name, _| name.to_s == "::GeniusBench" || name.namespace.to_s.start_with?("::GeniusBench::") }
 
   describe "the declared modules and classes" do
     subject { declared.keys.map(&:to_s).sort }
 
-    let(:defined) { ["::GeniusBench", *GeniusBench.constants.select { |name| GeniusBench.const_get(name).is_a?(Module) }.map { |name| "::GeniusBench::#{name}" }].sort }
+    let(:defined) { ["::GeniusBench", *KernelSpecSupport.kernel_modules(GeniusBench).map { |constant| "::#{constant.name}" }].sort }
 
     it { is_expected.to eq(defined) }
   end
