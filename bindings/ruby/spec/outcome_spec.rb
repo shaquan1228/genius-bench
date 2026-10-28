@@ -3,7 +3,7 @@
 RSpec.describe GeniusBench::Outcome do
   describe ".new" do
     subject(:outcome) do
-      build_outcome(changed_files: ["a.txt"], verification: GeniusBench::Verification.failed, response: kernel(1), facts: facts)
+      build_outcome(changed_files: ["a.txt"], verification: GeniusBench::Verification::Failed.new, response: kernel(1), facts: facts)
     end
 
     let(:facts) { [["extra", kernel(true)]] }
@@ -19,7 +19,7 @@ RSpec.describe GeniusBench::Outcome do
     end
 
     it "exposes the response" do
-      expect(outcome.response.scalar).to eq(1)
+      expect(outcome.response.value).to eq(1)
     end
 
     it "exposes the facts" do
@@ -38,11 +38,11 @@ RSpec.describe GeniusBench::Outcome do
       end
 
       it "converts the response" do
-        expect(outcome.response.get(path: ["answer"]).scalar).to eq(42)
+        expect(outcome.response.get(path: ["answer"]).value).to eq(42)
       end
 
       it "converts the facts" do
-        expect(outcome.facts[0][1].get(path: ["balance"]).scalar).to eq(5)
+        expect(outcome.facts[0][1].get(path: ["balance"]).value).to eq(5)
       end
     end
 
@@ -75,7 +75,7 @@ RSpec.describe GeniusBench::Outcome do
       let(:observation) { build_outcome(response: deepest, facts: [["fact", deepest]]).observation }
 
       it "accepts a response at the limit" do
-        expect(build_outcome(response: deepest).response.kind).to eq("list")
+        expect(build_outcome(response: deepest).response).to be_a(GeniusBench::Value::List)
       end
 
       it "rejects a generated observation as a response" do
@@ -92,7 +92,7 @@ RSpec.describe GeniusBench::Outcome do
     subject(:observation) do
       build_outcome(
         changed_files: ["a.txt"],
-        verification: GeniusBench::Verification.failed,
+        verification: GeniusBench::Verification::Failed.new,
         response: kernel(1),
         facts: [["verification", kernel("passed")], ["changed_files", kernel([])], ["extra", kernel(true)]]
       ).observation
@@ -103,15 +103,15 @@ RSpec.describe GeniusBench::Outcome do
     end
 
     it "keeps the verification status over a fact" do
-      expect(observation.get(path: ["verification"]).scalar).to eq("failed")
+      expect(observation.get(path: ["verification"]).value).to eq("failed")
     end
 
     it "keeps the changed files over a fact" do
-      expect(observation.get(path: ["changed_files"]).items.map(&:scalar)).to eq(["a.txt"])
+      expect(observation.get(path: ["changed_files"]).items.map(&:value)).to eq(["a.txt"])
     end
 
     it "keeps open facts reachable" do
-      expect(observation.get(path: ["extra"]).scalar).to be(true)
+      expect(observation.get(path: ["extra"]).value).to be(true)
     end
   end
 end

@@ -4,26 +4,27 @@ RSpec.describe GeniusBench::Value do
   describe ".from_ruby" do
     context "with scalars" do
       {
-        nil => "null", true => "bool", false => "bool", 1 => "int", 1.5 => "float", "x" => "string"
-      }.each do |ruby, kind|
-        it "converts #{ruby.inspect} to #{kind}" do
-          expect(kernel(ruby).kind).to eq(kind)
+        nil => described_class::Null, true => described_class::Bool, false => described_class::Bool,
+        1 => described_class::Int, 1.5 => described_class::Float, "x" => described_class::String
+      }.each do |ruby, variant|
+        it "converts #{ruby.inspect} to #{variant}" do
+          expect(kernel(ruby)).to be_an_instance_of(variant)
         end
       end
 
       it "returns the integer unchanged" do
-        expect(kernel(7).scalar).to eq(7)
+        expect(kernel(7).value).to eq(7)
       end
 
-      it "returns nil for null" do
-        expect(kernel(nil).scalar).to be_nil
+      it "has no value for null" do
+        expect(kernel(nil)).not_to respond_to(:value)
       end
     end
 
     context "with integers at the i64 bounds" do
       [-(2**63), -(2**53) - 1, 2**53 - 1, 2**53, 2**53 + 1, 2**63 - 1].each do |number|
         it "keeps #{number} exact" do
-          expect(kernel(number).scalar).to eql(number)
+          expect(kernel(number).value).to eql(number)
         end
       end
     end
@@ -40,18 +41,18 @@ RSpec.describe GeniusBench::Value do
       [0x3FB999999999999A, 0x3FB999999999999B, 0x4340000000000000, 0x4340000000000001].each do |bits|
         it "keeps bit pattern #{bits.to_s(16)}" do
           number = [bits].pack("Q>").unpack1("G")
-          expect([kernel(number).scalar].pack("G")).to eq([bits].pack("Q>"))
+          expect([kernel(number).value].pack("G")).to eq([bits].pack("Q>"))
         end
       end
     end
 
     context "with strings" do
       it "keeps UTF-8 text" do
-        expect(kernel("héllo 日本語").scalar).to eq("héllo 日本語")
+        expect(kernel("héllo 日本語").value).to eq("héllo 日本語")
       end
 
       it "transcodes compatible encodings" do
-        expect(kernel("héllo".encode("ISO-8859-1")).scalar).to eq("héllo")
+        expect(kernel("héllo".encode("ISO-8859-1")).value).to eq("héllo")
       end
 
       it "rejects binary strings with high bytes" do
@@ -63,7 +64,7 @@ RSpec.describe GeniusBench::Value do
       end
 
       it "returns frozen scalars" do
-        expect(kernel("x").scalar).to be_frozen
+        expect(kernel("x").value).to be_frozen
       end
     end
 
@@ -83,7 +84,7 @@ RSpec.describe GeniusBench::Value do
       end
 
       it "keeps an explicit null distinct from missing" do
-        expect(converted.get(path: ["null"]).kind).to eq("null")
+        expect(converted.get(path: ["null"])).to be_a(GeniusBench::Value::Null)
       end
 
       it "accepts symbol keys as names" do
@@ -103,7 +104,7 @@ RSpec.describe GeniusBench::Value do
       let(:custom) { Object.new.tap { |object| def object.to_kernel_value = {"answer" => 42} } }
 
       it "converts the protocol result" do
-        expect(kernel(custom).get(path: ["answer"]).scalar).to eq(42)
+        expect(kernel(custom).get(path: ["answer"]).value).to eq(42)
       end
     end
 
@@ -186,7 +187,7 @@ RSpec.describe GeniusBench::Value do
       end
 
       it "converts the snapshot" do
-        expect(kernel(source).items.map(&:scalar)).to eq([1, tail])
+        expect(kernel(source).items.map(&:value)).to eq([1, tail])
       end
     end
 
@@ -205,7 +206,7 @@ RSpec.describe GeniusBench::Value do
       end
 
       it "converts every snapshot element" do
-        expect(kernel(source).items.map(&:scalar)).to eq(["hooked", *items])
+        expect(kernel(source).items.map(&:value)).to eq(["hooked", *items])
       end
     end
 
@@ -224,7 +225,7 @@ RSpec.describe GeniusBench::Value do
       end
 
       it "reads arrays natively" do
-        expect(kernel(list.new([1, 2])).items.map(&:scalar)).to eq([1, 2])
+        expect(kernel(list.new([1, 2])).items.map(&:value)).to eq([1, 2])
       end
 
       it "reads hashes natively" do
@@ -244,7 +245,7 @@ RSpec.describe GeniusBench::Value do
       let(:deepest) { (1..256).reduce(kernel(nil)) { |inner, _| kernel([inner]) } }
 
       it "accepts the limit" do
-        expect(kernel(deepest).kind).to eq("list")
+        expect(kernel(deepest)).to be_a(GeniusBench::Value::List)
       end
 
       it "rejects one more level" do
@@ -253,15 +254,15 @@ RSpec.describe GeniusBench::Value do
     end
   end
 
-  describe "#scalar" do
-    it "raises TypeError for a structured value" do
-      expect { kernel([]).scalar }.to raise_error(TypeError)
+  describe "#value" do
+    it "exists only on scalar variants" do
+      expect { kernel([]).value }.to raise_error(NoMethodError)
     end
   end
 
   describe "#items" do
-    it "raises TypeError for a non-list" do
-      expect { kernel(1).items }.to raise_error(TypeError)
+    it "exists only on lists" do
+      expect { kernel(1).items }.to raise_error(NoMethodError)
     end
 
     it "returns a frozen snapshot" do
@@ -270,8 +271,8 @@ RSpec.describe GeniusBench::Value do
   end
 
   describe "#fields" do
-    it "raises TypeError for a non-record" do
-      expect { kernel(1).fields }.to raise_error(TypeError)
+    it "exists only on records" do
+      expect { kernel(1).fields }.to raise_error(NoMethodError)
     end
   end
 
@@ -352,6 +353,6 @@ RSpec.describe GeniusBench::Value do
   describe "#inspect" do
     subject { kernel([1, "x"]).inspect }
 
-    it { is_expected.to eq('#<GeniusBench::Value List([Int(1), String("x")])>') }
+    it { is_expected.to eq('#<GeniusBench::Value::List List([Int(1), String("x")])>') }
   end
 end

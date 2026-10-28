@@ -4,10 +4,10 @@ RSpec.describe GeniusBench::Predicate do
   let(:observation) { kernel({"present" => 1, "null" => nil, "list" => [1, "x"], "nested" => {"k" => nil}, "t" => text}) }
   let(:text) { "one two" }
 
-  describe ".present" do
-    subject(:predicate) { described_class.present(path: ["present"]) }
+  describe "::Present" do
+    subject(:predicate) { described_class::Present.new(path: ["present"]) }
 
-    it { is_expected.to have_attributes(kind: "present", path: ["present"]) }
+    it { is_expected.to be_a(GeniusBench::Predicate::Present).and have_attributes(path: ["present"]) }
     it("holds") { is_expected.to be_holds(observation: observation) }
 
     it "returns a frozen path" do
@@ -15,13 +15,13 @@ RSpec.describe GeniusBench::Predicate do
     end
 
     context "when the value is null" do
-      subject { described_class.present(path: ["null"]) }
+      subject { described_class::Present.new(path: ["null"]) }
 
       it("does not hold") { is_expected.not_to be_holds(observation: observation) }
     end
 
     context "when the path is missing" do
-      subject { described_class.present(path: ["missing"]) }
+      subject { described_class::Present.new(path: ["missing"]) }
 
       it("does not hold") { is_expected.not_to be_holds(observation: observation) }
     end
@@ -32,13 +32,13 @@ RSpec.describe GeniusBench::Predicate do
 
     context "with a non-string path element", contract: true do
       it "raises TypeError" do
-        expect { described_class.present(path: [1]) }.to raise_error(TypeError)
+        expect { described_class::Present.new(path: [1]) }.to raise_error(TypeError)
       end
     end
 
     context "with a path that is not an array", contract: true do
       it "raises TypeError" do
-        expect { described_class.present(path: "a") }.to raise_error(TypeError)
+        expect { described_class::Present.new(path: "a") }.to raise_error(TypeError)
       end
     end
 
@@ -46,100 +46,100 @@ RSpec.describe GeniusBench::Predicate do
       let(:convertible) { Object.new.tap { |object| def object.to_str = "a" } }
 
       it "raises TypeError" do
-        expect { described_class.present(path: [convertible]) }.to raise_error(TypeError)
+        expect { described_class::Present.new(path: [convertible]) }.to raise_error(TypeError)
       end
     end
   end
 
-  describe ".equals" do
-    subject(:predicate) { described_class.equals(path: ["null"], expected: kernel(nil)) }
+  describe "::Equals" do
+    subject(:predicate) { described_class::Equals.new(path: ["null"], expected: kernel(nil)) }
 
-    it { is_expected.to have_attributes(kind: "equals") }
+    it { is_expected.to be_a(GeniusBench::Predicate::Equals) }
     it("holds") { is_expected.to be_holds(observation: observation) }
 
     it "exposes the expected value" do
-      expect(predicate.expected.kind).to eq("null")
+      expect(predicate.expected).to be_a(GeniusBench::Value::Null)
     end
 
     context "when the path is missing" do
-      subject { described_class.equals(path: ["missing"], expected: kernel(nil)) }
+      subject { described_class::Equals.new(path: ["missing"], expected: kernel(nil)) }
 
       it("does not hold") { is_expected.not_to be_holds(observation: observation) }
     end
 
     context "with a native expected value" do
-      subject { described_class.equals(path: ["nested"], expected: {"k" => nil}) }
+      subject { described_class::Equals.new(path: ["nested"], expected: {"k" => nil}) }
 
       it("holds") { is_expected.to be_holds(observation: observation) }
     end
   end
 
-  describe ".within" do
-    subject(:predicate) { described_class.within(path: ["list"], allowed: [kernel(1), kernel("x")]) }
+  describe "::Within" do
+    subject(:predicate) { described_class::Within.new(path: ["list"], allowed: [kernel(1), kernel("x")]) }
 
-    it { is_expected.to have_attributes(kind: "within", check: nil, checks: []) }
+    it { is_expected.to be_a(GeniusBench::Predicate::Within).and not_respond_to(:check, :checks) }
     it("holds") { is_expected.to be_holds(observation: observation) }
 
     it "exposes the allowed values" do
-      expect(predicate.allowed.map(&:scalar)).to eq([1, "x"])
+      expect(predicate.allowed.map(&:value)).to eq([1, "x"])
     end
 
     context "with native allowed values" do
-      subject { described_class.within(path: ["list"], allowed: [1, "x"]) }
+      subject { described_class::Within.new(path: ["list"], allowed: [1, "x"]) }
 
       it("holds") { is_expected.to be_holds(observation: observation) }
     end
   end
 
-  describe ".contains" do
-    subject(:predicate) { described_class.contains(path: ["list"], item: kernel("x")) }
+  describe "::Contains" do
+    subject(:predicate) { described_class::Contains.new(path: ["list"], item: kernel("x")) }
 
-    it { is_expected.to have_attributes(kind: "contains") }
+    it { is_expected.to be_a(GeniusBench::Predicate::Contains) }
     it("holds") { is_expected.to be_holds(observation: observation) }
 
     it "exposes the item" do
-      expect(predicate.item.scalar).to eq("x")
+      expect(predicate.item.value).to eq("x")
     end
 
     context "when the item differs by numeric type" do
-      subject { described_class.contains(path: ["list"], item: kernel(1.0)) }
+      subject { described_class::Contains.new(path: ["list"], item: kernel(1.0)) }
 
       it("does not hold") { is_expected.not_to be_holds(observation: observation) }
     end
 
     context "with a native item" do
-      subject { described_class.contains(path: ["list"], item: "x") }
+      subject { described_class::Contains.new(path: ["list"], item: "x") }
 
       it("holds") { is_expected.to be_holds(observation: observation) }
     end
 
     context "with an unsupported item", contract: true do
       it "raises TypeError" do
-        expect { described_class.contains(path: ["list"], item: Object.new) }.to raise_error(TypeError)
+        expect { described_class::Contains.new(path: ["list"], item: Object.new) }.to raise_error(TypeError)
       end
     end
   end
 
-  describe ".words" do
-    subject(:predicate) { described_class.words(path: ["t"], min_words: 2, max_words: 2) }
+  describe "::Words" do
+    subject(:predicate) { described_class::Words.new(path: ["t"], min_words: 2, max_words: 2) }
 
-    it { is_expected.to have_attributes(kind: "words", min_words: 2, max_words: 2) }
+    it { is_expected.to be_a(GeniusBench::Predicate::Words).and have_attributes(min_words: 2, max_words: 2) }
     it("holds") { is_expected.to be_holds(observation: observation) }
 
     context "when the count is below the minimum" do
-      subject { described_class.words(path: ["t"], min_words: 3, max_words: 4) }
+      subject { described_class::Words.new(path: ["t"], min_words: 3, max_words: 4) }
 
       it("does not hold") { is_expected.not_to be_holds(observation: observation) }
     end
 
     context "when the count is above the maximum" do
-      subject { described_class.words(path: ["t"], min_words: 1, max_words: 1) }
+      subject { described_class::Words.new(path: ["t"], min_words: 1, max_words: 1) }
 
       it("does not hold") { is_expected.not_to be_holds(observation: observation) }
     end
 
     context "with empty text" do
-      subject { described_class.words(path: ["t"], min_words: 0, max_words: 0) }
+      subject { described_class::Words.new(path: ["t"], min_words: 0, max_words: 0) }
 
       let(:text) { "" }
 
@@ -147,7 +147,7 @@ RSpec.describe GeniusBench::Predicate do
     end
 
     context "with the original whitespace set" do
-      subject { described_class.words(path: ["t"], min_words: 4, max_words: 4) }
+      subject { described_class::Words.new(path: ["t"], min_words: 4, max_words: 4) }
 
       let(:text) { "a b　c\u0085d" }
 
@@ -155,7 +155,7 @@ RSpec.describe GeniusBench::Predicate do
     end
 
     context "with characters outside the whitespace set" do
-      subject { described_class.words(path: ["t"], min_words: 1, max_words: 1) }
+      subject { described_class::Words.new(path: ["t"], min_words: 1, max_words: 1) }
 
       let(:text) { "a​b᠎c" }
 
@@ -163,7 +163,7 @@ RSpec.describe GeniusBench::Predicate do
     end
 
     context "with a large bound" do
-      subject { described_class.words(path: [], min_words: 1, max_words: 2**40) }
+      subject { described_class::Words.new(path: [], min_words: 1, max_words: 2**40) }
 
       it { is_expected.to have_attributes(max_words: 2**40) }
     end
@@ -171,7 +171,7 @@ RSpec.describe GeniusBench::Predicate do
     context "with non-integer bounds", contract: true do
       [1.5, Rational(3, 2), true, "2", nil].each do |invalid|
         it "raises TypeError for #{invalid.inspect}" do
-          expect { described_class.words(path: [], min_words: invalid, max_words: 2) }.to raise_error(TypeError)
+          expect { described_class::Words.new(path: [], min_words: invalid, max_words: 2) }.to raise_error(TypeError)
         end
       end
     end
@@ -180,17 +180,17 @@ RSpec.describe GeniusBench::Predicate do
       let(:convertible) { Object.new.tap { |object| def object.to_int = 1 } }
 
       it "raises TypeError" do
-        expect { described_class.words(path: [], min_words: convertible, max_words: 1) }.to raise_error(TypeError)
+        expect { described_class::Words.new(path: [], min_words: convertible, max_words: 1) }.to raise_error(TypeError)
       end
     end
   end
 
-  describe ".all" do
-    subject(:predicate) { described_class.all(checks: checks) }
+  describe "::All" do
+    subject(:predicate) { described_class::All.new(checks: checks) }
 
-    let(:checks) { [["one", described_class.present(path: ["present"])], ["two", described_class.present(path: ["null"])]] }
+    let(:checks) { [["one", described_class::Present.new(path: ["present"])], ["two", described_class::Present.new(path: ["null"])]] }
 
-    it { is_expected.to have_attributes(kind: "all", path: nil) }
+    it { is_expected.to be_a(GeniusBench::Predicate::All).and not_respond_to(:path) }
     it("does not hold") { is_expected.not_to be_holds(observation: observation) }
 
     it "exposes the named checks" do
@@ -204,7 +204,7 @@ RSpec.describe GeniusBench::Predicate do
     end
 
     context "with many checks" do
-      let(:checks) { Array.new(300) { |index| [index.to_s, described_class.present(path: [])] } }
+      let(:checks) { Array.new(300) { |index| [index.to_s, described_class::Present.new(path: [])] } }
 
       it "keeps every check" do
         expect(predicate.checks.size).to eq(300)
@@ -220,7 +220,7 @@ RSpec.describe GeniusBench::Predicate do
     end
 
     context "with a Hash of checks keyed by symbols" do
-      let(:checks) { {one: described_class.present(path: ["present"]), two: described_class.present(path: ["null"])} }
+      let(:checks) { {one: described_class::Present.new(path: ["present"]), two: described_class::Present.new(path: ["null"])} }
 
       it "names the checks in entry order" do
         expect(predicate.checks.map(&:first)).to eq(%w[one two])
@@ -228,12 +228,12 @@ RSpec.describe GeniusBench::Predicate do
     end
   end
 
-  describe ".any" do
-    subject(:predicate) { described_class.any(checks: checks) }
+  describe "::Any" do
+    subject(:predicate) { described_class::Any.new(checks: checks) }
 
-    let(:checks) { [["one", described_class.present(path: ["null"])], ["two", described_class.present(path: ["present"])]] }
+    let(:checks) { [["one", described_class::Present.new(path: ["null"])], ["two", described_class::Present.new(path: ["present"])]] }
 
-    it { is_expected.to have_attributes(kind: "any") }
+    it { is_expected.to be_a(GeniusBench::Predicate::Any) }
     it("holds") { is_expected.to be_holds(observation: observation) }
 
     context "without checks" do
@@ -243,29 +243,29 @@ RSpec.describe GeniusBench::Predicate do
     end
   end
 
-  describe ".not" do
-    subject(:predicate) { described_class.not(check: described_class.present(path: %w[nested k])) }
+  describe "::Not" do
+    subject(:predicate) { described_class::Not.new(check: described_class::Present.new(path: %w[nested k])) }
 
-    it { is_expected.to have_attributes(kind: "not") }
+    it { is_expected.to be_a(GeniusBench::Predicate::Not) }
     it("holds") { is_expected.to be_holds(observation: observation) }
 
     it "exposes the negated check" do
-      expect(predicate.check.kind).to eq("present")
+      expect(predicate.check).to be_a(GeniusBench::Predicate::Present)
     end
   end
 
-  %w[not all any].each do |operator|
-    describe ".#{operator}" do
+  %w[Not All Any].each do |operator|
+    describe "::#{operator}" do
       let(:wrap) do
         lambda do |inner|
-          (operator == "not") ? described_class.not(check: inner) : described_class.public_send(operator, checks: [["x", inner]])
+          (operator == "Not") ? described_class::Not.new(check: inner) : described_class.const_get(operator).new(checks: [["x", inner]])
         end
       end
-      let(:deepest) { (1..255).reduce(described_class.present(path: [])) { |inner, _| wrap.call(inner) } }
+      let(:deepest) { (1..255).reduce(described_class::Present.new(path: [])) { |inner, _| wrap.call(inner) } }
 
       context "when nested to the limit" do
         it "accepts #{GeniusBench::NESTING_LIMIT} levels" do
-          expect(GeniusBench::Assessment.new(predicate: deepest, observation: kernel(1)).passed?).to eq(operator != "not")
+          expect(GeniusBench::Assessment.new(predicate: deepest, observation: kernel(1)).passed?).to eq(operator != "Not")
         end
 
         it "rejects one more level" do
@@ -277,7 +277,7 @@ RSpec.describe GeniusBench::Predicate do
 
   describe "#holds?" do
     it "requires the observation keyword", contract: true do
-      expect { described_class.present(path: []).holds?(observation) }.to raise_error(ArgumentError)
+      expect { described_class::Present.new(path: []).holds?(observation) }.to raise_error(ArgumentError)
     end
   end
 end

@@ -148,7 +148,7 @@ end
 
 RSpec.describe GeniusBench::Criterion do
   let(:rubric) do
-    described_class.answer(
+    described_class::Answer.new(
       rubric: GeniusBench::Rubric.new(
         expected: [["answer", kernel(42)]],
         text_rule: GeniusBench::TextRule.new(field: "reason", min_words: 1, max_words: 5)
@@ -156,11 +156,11 @@ RSpec.describe GeniusBench::Criterion do
     )
   end
 
-  describe ".answer" do
+  describe "::Answer" do
     subject(:criterion) { rubric }
 
     it_behaves_like "a frozen declaration"
-    it { is_expected.to have_attributes(kind: "answer", verifier: nil, predicate: nil) }
+    it { is_expected.to be_a(GeniusBench::Criterion::Answer).and not_respond_to(:verifier, :predicate) }
 
     it "exposes the rubric" do
       expect(criterion.rubric.text_rule.field).to eq("reason")
@@ -169,7 +169,7 @@ RSpec.describe GeniusBench::Criterion do
     describe "#condition" do
       subject(:condition) { criterion.condition }
 
-      it { is_expected.to have_attributes(kind: "all") }
+      it { is_expected.to be_a(GeniusBench::Predicate::All) }
 
       it "checks the response, each field, and the text rule" do
         expect(condition.checks.map(&:first)).to eq(%w[response answer text])
@@ -185,25 +185,25 @@ RSpec.describe GeniusBench::Criterion do
     end
   end
 
-  describe ".code" do
+  describe "::Code" do
     subject(:criterion) do
-      described_class.code(verifier: GeniusBench::Verifier.new(inputs: ["a"], files: [], tools: [], command: ["check"], stdin: "", timeout_seconds: 1))
+      described_class::Code.new(verifier: GeniusBench::Verifier.new(inputs: ["a"], files: [], tools: [], command: ["check"], stdin: "", timeout_seconds: 1))
     end
 
-    it { is_expected.to have_attributes(kind: "code", rubric: nil, predicate: nil) }
+    it { is_expected.to be_a(GeniusBench::Criterion::Code).and not_respond_to(:rubric, :predicate) }
 
     it "conditions on a passed verification" do
-      expect(criterion.condition).to have_attributes(kind: "equals", path: ["verification"])
+      expect(criterion.condition).to be_a(GeniusBench::Predicate::Equals).and have_attributes(path: ["verification"])
     end
   end
 
-  describe ".state" do
-    subject(:criterion) { described_class.state(predicate: GeniusBench::Predicate.present(path: ["response"])) }
+  describe "::State" do
+    subject(:criterion) { described_class::State.new(predicate: GeniusBench::Predicate::Present.new(path: ["response"])) }
 
-    it { is_expected.to have_attributes(kind: "state", rubric: nil, verifier: nil) }
+    it { is_expected.to be_a(GeniusBench::Criterion::State).and not_respond_to(:rubric, :verifier) }
 
     it "conditions on the predicate" do
-      expect(criterion.condition.kind).to eq("present")
+      expect(criterion.condition).to be_a(GeniusBench::Predicate::Present)
     end
   end
 end
@@ -219,11 +219,11 @@ RSpec.describe GeniusBench::Reference do
     end
 
     it "exposes the completion" do
-      expect(reference.completion.scalar).to eq("done")
+      expect(reference.completion.value).to eq("done")
     end
 
     it "accepts nil as the completion" do
-      expect(described_class.new(edits: [], completion: nil).completion.kind).to eq("null")
+      expect(described_class.new(edits: [], completion: nil).completion).to be_a(GeniusBench::Value::Null)
     end
   end
 end

@@ -3,9 +3,9 @@ use magnus::scan_args::{ScanArgsRequired, get_kwargs, scan_args};
 use magnus::typed_data::Obj;
 use magnus::value::Lazy;
 use magnus::{
-    Error, ExceptionClass, Float, Integer, IntoValue, RArray, RHash, RModule, RObject, RString,
-    Ruby, Symbol, TryConvert, TypedData, Value as RValue, function, method, prelude::*,
-    r_hash::ForEach,
+    DataType, DataTypeFunctions, Error, ExceptionClass, Float, Integer, IntoValue, RArray, RClass,
+    RHash, RModule, RObject, RString, Ruby, Symbol, TryConvert, TypedData, Value as RValue,
+    function, method, prelude::*, r_hash::ForEach,
 };
 use semantic_core as core;
 use std::collections::HashSet;
@@ -49,7 +49,7 @@ fn hash_code<T: Wrapped>(this: &T) -> i64 {
 }
 
 fn inspect<T: Wrapped>(ruby: &Ruby, this: &T) -> String {
-    format!("#<{} {:?}>", T::class(ruby), this.inner())
+    format!("#<{} {:?}>", T::class_for(ruby, this), this.inner())
 }
 
 static VALIDATION_ERROR: Lazy<ExceptionClass> =
@@ -312,10 +312,202 @@ fn host_values(ruby: &Ruby, value: RValue) -> Result<Vec<core::Value>, Error> {
         .collect()
 }
 
-#[magnus::wrap(class = "GeniusBench::Value", free_immediately, size)]
+/* Sum types: one Ruby class per core variant, nested under its sum type, such as
+GeniusBench::Verification::HarnessError. Each variant reads only its own fields and
+supports is_a? and case/in. TypedData::class_for picks the variant class on wrap.
+https://docs.rs/magnus/0.9.3/magnus/trait.TypedData.html#method.class_for
+https://docs.ruby-lang.org/en/3.3/syntax/pattern_matching_rdoc.html */
+type Shape = &'static [(&'static str, &'static [&'static str])];
+
+trait Variants: Wrapped + Sized {
+    /// Variant class names and their field readers, in core declaration order.
+    const SHAPE: Shape;
+    fn variant(&self) -> usize;
+    fn values(&self, ruby: &Ruby) -> Result<Vec<RValue>, Error>;
+    fn build(ruby: &Ruby, variant: usize, fields: Vec<RValue>) -> Result<Self, Error>;
+}
+
+macro_rules! sum_type {
+    ($type:ident, $name:literal, $data:literal) => {
+        impl DataTypeFunctions for $type {}
+
+        unsafe impl TypedData for $type {
+            fn class(ruby: &Ruby) -> RClass {
+                static CLASS: Lazy<RClass> = Lazy::new(|ruby| {
+                    ruby.class_object()
+                        .const_get::<_, RModule>("GeniusBench")
+                        .and_then(|module| module.const_get($name))
+                        .expect("GeniusBench sum types are defined at initialization")
+                });
+                ruby.get_inner(&CLASS)
+            }
+
+            fn data_type() -> &'static DataType {
+                static DATA_TYPE: DataType =
+                    magnus::typed_data::DataTypeBuilder::<$type>::new($data)
+                        .free_immediately()
+                        .size()
+                        .build();
+                &DATA_TYPE
+            }
+
+            fn class_for(ruby: &Ruby, value: &Self) -> RClass {
+                variant_class::<Self>(ruby, value.variant())
+            }
+        }
+    };
+}
+
+fn variant_class<T: Variants>(ruby: &Ruby, variant: usize) -> RClass {
+    T::class(ruby)
+        .const_get(T::SHAPE[variant].0)
+        .expect("GeniusBench variant classes are defined at initialization")
+}
+
+fn keywords(ruby: &Ruby, args: &[RValue], names: &[&str]) -> Result<Vec<RValue>, Error> {
+    Ok(match names.len() {
+        0 => {
+            required::<()>(args, names)?;
+            vec![]
+        }
+        1 => {
+            let (first,): (RValue,) = required(args, names)?;
+            vec![first]
+        }
+        2 => {
+            let (first, second): (RValue, RValue) = required(args, names)?;
+            vec![first, second]
+        }
+        3 => {
+            let (first, second, third): (RValue, RValue, RValue) = required(args, names)?;
+            vec![first, second, third]
+        }
+        count => return Err(argument_error(ruby, format!("{count} fields exceed 3"))),
+    })
+}
+
+fn construct<T: Variants>(ruby: &Ruby, class: RClass, args: &[RValue]) -> Result<Obj<T>, Error> {
+    let variant = (0..T::SHAPE.len())
+        .find(|&variant| variant_class::<T>(ruby, variant).as_raw() == class.as_raw())
+        .ok_or_else(|| unexpected(ruby, "a variant class", class.as_value()))?;
+    let fields = keywords(ruby, args, T::SHAPE[variant].1)?;
+    Ok(frozen(ruby, T::build(ruby, variant, fields)?))
+}
+
+fn field_at<T: Variants, const INDEX: usize>(ruby: &Ruby, this: &T) -> Result<RValue, Error> {
+    this.values(ruby)?
+        .into_iter()
+        .nth(INDEX)
+        .ok_or_else(|| type_error(ruby, format!("Variant has no field {INDEX}")))
+}
+
+fn deconstruct_keys<T: Variants>(ruby: &Ruby, this: &T, _keys: RValue) -> Result<RHash, Error> {
+    let result = ruby.hash_new();
+    for (name, value) in T::SHAPE[this.variant()].1.iter().zip(this.values(ruby)?) {
+        result.aset(ruby.to_symbol(name), value)?;
+    }
+    Ok(result)
+}
+
+macro_rules! define_variants {
+    ($ruby:expr, $base:expr, $type:ty) => {{
+        for (name, fields) in <$type as Variants>::SHAPE {
+            let class = $base.define_class(*name, $base)?;
+            class.undef_default_alloc_func();
+            class.define_singleton_method("new", method!(construct::<$type>, -1))?;
+            class.define_method("deconstruct_keys", method!(deconstruct_keys::<$type>, 1))?;
+            for (index, field) in fields.iter().enumerate() {
+                match index {
+                    0 => class.define_method(*field, method!(field_at::<$type, 0>, 0))?,
+                    1 => class.define_method(*field, method!(field_at::<$type, 1>, 0))?,
+                    2 => class.define_method(*field, method!(field_at::<$type, 2>, 0))?,
+                    _ => return Err(argument_error($ruby, format!("{name} has over 3 fields"))),
+                }
+            }
+        }
+    }};
+}
+
+fn host_items(ruby: &Ruby, value: RValue) -> Result<Vec<core::Value>, Error> {
+    let items = list(ruby, value)?;
+    let mut active = HashSet::new();
+    (0..items.len())
+        .map(|index| convert(ruby, items.entry(index as isize)?, &mut active, 1))
+        .collect()
+}
+
+fn host_record(ruby: &Ruby, value: RValue) -> Result<Vec<(String, core::Value)>, Error> {
+    let mut active = HashSet::new();
+    named(ruby, value, |item| convert(ruby, item, &mut active, 1))
+}
+
 #[derive(Clone)]
 struct Value(core::Value);
 wrapped!(Value, core::Value);
+sum_type!(Value, "Value", c"GeniusBench::Value");
+
+impl Variants for Value {
+    const SHAPE: Shape = &[
+        ("Null", &[]),
+        ("Bool", &["value"]),
+        ("Int", &["value"]),
+        ("Float", &["value"]),
+        ("String", &["value"]),
+        ("List", &["items"]),
+        ("Record", &["fields"]),
+    ];
+
+    fn variant(&self) -> usize {
+        match self.0 {
+            core::Value::Null => 0,
+            core::Value::Bool(_) => 1,
+            core::Value::Int(_) => 2,
+            core::Value::Float(_) => 3,
+            core::Value::String(_) => 4,
+            core::Value::List(_) => 5,
+            core::Value::Record(_) => 6,
+        }
+    }
+
+    fn values(&self, ruby: &Ruby) -> Result<Vec<RValue>, Error> {
+        Ok(match &self.0 {
+            core::Value::Null => vec![],
+            core::Value::Bool(value) => vec![value.into_value_with(ruby)],
+            core::Value::Int(value) => vec![ruby.integer_from_i64(*value).as_value()],
+            core::Value::Float(value) => vec![ruby.float_from_f64(*value).as_value()],
+            core::Value::String(value) => vec![string(ruby, value).as_value()],
+            core::Value::List(items) => vec![values(ruby, items)?.as_value()],
+            core::Value::Record(fields) => vec![named_values(ruby, fields)?.as_value()],
+        })
+    }
+
+    fn build(ruby: &Ruby, variant: usize, fields: Vec<RValue>) -> Result<Self, Error> {
+        let field = || fields[0];
+        Ok(Self(match variant {
+            0 => core::Value::Null,
+            1 => core::Value::Bool(boolean(ruby, field())?),
+            2 => core::Value::Int(integer(ruby, field())?),
+            3 => core::Value::Float(
+                Float::from_value(field())
+                    .ok_or_else(|| unexpected(ruby, "a Float", field()))?
+                    .to_f64(),
+            ),
+            4 => core::Value::String(text(ruby, field())?),
+            5 => core::Value::List(host_items(ruby, field())?),
+            _ => core::Value::Record(host_record(ruby, field())?),
+        }))
+    }
+}
+
+fn boolean(ruby: &Ruby, value: RValue) -> Result<bool, Error> {
+    if value.is_kind_of(ruby.class_true_class()) {
+        Ok(true)
+    } else if value.is_kind_of(ruby.class_false_class()) {
+        Ok(false)
+    } else {
+        Err(unexpected(ruby, "true or false", value))
+    }
+}
 
 fn value_from_ruby(ruby: &Ruby, args: &[RValue]) -> Result<Obj<Value>, Error> {
     let (value,): (RValue,) = required(args, &["value"])?;
@@ -323,34 +515,6 @@ fn value_from_ruby(ruby: &Ruby, args: &[RValue]) -> Result<Obj<Value>, Error> {
         ruby,
         Value(convert(ruby, value, &mut HashSet::new(), 0)?),
     ))
-}
-
-fn value_kind(ruby: &Ruby, this: &Value) -> RString {
-    string(
-        ruby,
-        match this.0 {
-            core::Value::Null => "null",
-            core::Value::Bool(_) => "bool",
-            core::Value::Int(_) => "int",
-            core::Value::Float(_) => "float",
-            core::Value::String(_) => "string",
-            core::Value::List(_) => "list",
-            core::Value::Record(_) => "record",
-        },
-    )
-}
-
-fn value_scalar(ruby: &Ruby, this: &Value) -> Result<RValue, Error> {
-    Ok(match &this.0 {
-        core::Value::Null => ruby.qnil().as_value(),
-        core::Value::Bool(value) => value.into_value_with(ruby),
-        core::Value::Int(value) => ruby.integer_from_i64(*value).as_value(),
-        core::Value::Float(value) => ruby.float_from_f64(*value).as_value(),
-        core::Value::String(value) => string(ruby, value).as_value(),
-        _ => {
-            return Err(type_error(ruby, "Structured values have no scalar".into()));
-        }
-    })
 }
 
 fn values(ruby: &Ruby, items: &[core::Value]) -> Result<RArray, Error> {
@@ -367,20 +531,6 @@ fn named_values(ruby: &Ruby, items: &[(String, core::Value)]) -> Result<RArray, 
             .iter()
             .map(|(name, item)| (name.clone(), frozen(ruby, Value(item.clone())))),
     )
-}
-
-fn value_items(ruby: &Ruby, this: &Value) -> Result<RArray, Error> {
-    let core::Value::List(items) = &this.0 else {
-        return Err(type_error(ruby, "Value is not a list".into()));
-    };
-    values(ruby, items)
-}
-
-fn value_fields(ruby: &Ruby, this: &Value) -> Result<RArray, Error> {
-    let core::Value::Record(fields) = &this.0 else {
-        return Err(type_error(ruby, "Value is not a record".into()));
-    };
-    named_values(ruby, fields)
 }
 
 fn value_get(ruby: &Ruby, this: &Value, args: &[RValue]) -> Result<Option<Obj<Value>>, Error> {
@@ -416,70 +566,108 @@ fn record_to_kernel_value(ruby: &Ruby, this: &Record) -> Obj<Value> {
     frozen(ruby, Value(core::Value::Record(this.0.clone())))
 }
 
-#[magnus::wrap(class = "GeniusBench::Predicate", free_immediately, size)]
 #[derive(Clone)]
 struct Predicate(core::Predicate);
 wrapped!(Predicate, core::Predicate);
+sum_type!(Predicate, "Predicate", c"GeniusBench::Predicate");
 
-fn predicate_present(ruby: &Ruby, args: &[RValue]) -> Result<Obj<Predicate>, Error> {
-    let (path,): (RValue,) = required(args, &["path"])?;
-    Ok(frozen(
-        ruby,
-        Predicate(core::Predicate::Present {
-            path: texts(ruby, path)?,
-        }),
-    ))
+impl Variants for Predicate {
+    const SHAPE: Shape = &[
+        ("Present", &["path"]),
+        ("Equals", &["path", "expected"]),
+        ("Within", &["path", "allowed"]),
+        ("Contains", &["path", "item"]),
+        ("Words", &["path", "min_words", "max_words"]),
+        ("All", &["checks"]),
+        ("Any", &["checks"]),
+        ("Not", &["check"]),
+    ];
+
+    fn variant(&self) -> usize {
+        match self.0 {
+            core::Predicate::Present { .. } => 0,
+            core::Predicate::Equals { .. } => 1,
+            core::Predicate::Within { .. } => 2,
+            core::Predicate::Contains { .. } => 3,
+            core::Predicate::Words { .. } => 4,
+            core::Predicate::All { .. } => 5,
+            core::Predicate::Any { .. } => 6,
+            core::Predicate::Not { .. } => 7,
+        }
+    }
+
+    fn values(&self, ruby: &Ruby) -> Result<Vec<RValue>, Error> {
+        let value = |value: &core::Value| frozen(ruby, Value(value.clone())).as_value();
+        Ok(match &self.0 {
+            core::Predicate::Present { path } => vec![strings(ruby, path)?.as_value()],
+            core::Predicate::Equals { path, expected } => {
+                vec![strings(ruby, path)?.as_value(), value(expected)]
+            }
+            core::Predicate::Within { path, allowed } => vec![
+                strings(ruby, path)?.as_value(),
+                values(ruby, allowed)?.as_value(),
+            ],
+            core::Predicate::Contains { path, item } => {
+                vec![strings(ruby, path)?.as_value(), value(item)]
+            }
+            core::Predicate::Words {
+                path,
+                min_words,
+                max_words,
+            } => vec![
+                strings(ruby, path)?.as_value(),
+                ruby.integer_from_i64(*min_words).as_value(),
+                ruby.integer_from_i64(*max_words).as_value(),
+            ],
+            core::Predicate::All { checks } | core::Predicate::Any { checks } => {
+                vec![predicates(ruby, checks)?.as_value()]
+            }
+            core::Predicate::Not { check } => {
+                vec![frozen(ruby, Predicate(*check.clone())).as_value()]
+            }
+        })
+    }
+
+    fn build(ruby: &Ruby, variant: usize, fields: Vec<RValue>) -> Result<Self, Error> {
+        let path = || texts(ruby, fields[0]);
+        Ok(Self(match variant {
+            0 => core::Predicate::Present { path: path()? },
+            1 => core::Predicate::Equals {
+                path: path()?,
+                expected: host_value(ruby, fields[1])?,
+            },
+            2 => core::Predicate::Within {
+                path: path()?,
+                allowed: host_values(ruby, fields[1])?,
+            },
+            3 => core::Predicate::Contains {
+                path: path()?,
+                item: host_value(ruby, fields[1])?,
+            },
+            4 => core::Predicate::Words {
+                path: path()?,
+                min_words: integer(ruby, fields[1])?,
+                max_words: integer(ruby, fields[2])?,
+            },
+            5 => core::Predicate::All {
+                checks: nested_checks(ruby, fields[0])?,
+            },
+            6 => core::Predicate::Any {
+                checks: nested_checks(ruby, fields[0])?,
+            },
+            _ => {
+                let check = <&Predicate>::try_convert(fields[0])?.0.clone();
+                check_predicate_depth(ruby, &check, 1)?;
+                core::Predicate::Not {
+                    check: Box::new(check),
+                }
+            }
+        }))
+    }
 }
 
-fn predicate_equals(ruby: &Ruby, args: &[RValue]) -> Result<Obj<Predicate>, Error> {
-    let (path, expected): (RValue, RValue) = required(args, &["path", "expected"])?;
-    Ok(frozen(
-        ruby,
-        Predicate(core::Predicate::Equals {
-            path: texts(ruby, path)?,
-            expected: host_value(ruby, expected)?,
-        }),
-    ))
-}
-
-fn predicate_within(ruby: &Ruby, args: &[RValue]) -> Result<Obj<Predicate>, Error> {
-    let (path, allowed): (RValue, RValue) = required(args, &["path", "allowed"])?;
-    Ok(frozen(
-        ruby,
-        Predicate(core::Predicate::Within {
-            path: texts(ruby, path)?,
-            allowed: host_values(ruby, allowed)?,
-        }),
-    ))
-}
-
-fn predicate_contains(ruby: &Ruby, args: &[RValue]) -> Result<Obj<Predicate>, Error> {
-    let (path, item): (RValue, RValue) = required(args, &["path", "item"])?;
-    Ok(frozen(
-        ruby,
-        Predicate(core::Predicate::Contains {
-            path: texts(ruby, path)?,
-            item: host_value(ruby, item)?,
-        }),
-    ))
-}
-
-fn predicate_words(ruby: &Ruby, args: &[RValue]) -> Result<Obj<Predicate>, Error> {
-    let (path, min_words, max_words): (RValue, RValue, RValue) =
-        required(args, &["path", "min_words", "max_words"])?;
-    Ok(frozen(
-        ruby,
-        Predicate(core::Predicate::Words {
-            path: texts(ruby, path)?,
-            min_words: integer(ruby, min_words)?,
-            max_words: integer(ruby, max_words)?,
-        }),
-    ))
-}
-
-fn predicate_checks(ruby: &Ruby, args: &[RValue]) -> Result<Vec<(String, core::Predicate)>, Error> {
-    let (checks,): (RValue,) = required(args, &["checks"])?;
-    let checks = named(ruby, checks, |item| {
+fn nested_checks(ruby: &Ruby, value: RValue) -> Result<Vec<(String, core::Predicate)>, Error> {
+    let checks = named(ruby, value, |item| {
         Ok(<&Predicate>::try_convert(item)?.0.clone())
     })?;
     for (_, check) in &checks {
@@ -488,85 +676,9 @@ fn predicate_checks(ruby: &Ruby, args: &[RValue]) -> Result<Vec<(String, core::P
     Ok(checks)
 }
 
-fn predicate_all(ruby: &Ruby, args: &[RValue]) -> Result<Obj<Predicate>, Error> {
-    let checks = predicate_checks(ruby, args)?;
-    Ok(frozen(ruby, Predicate(core::Predicate::All { checks })))
-}
-
-fn predicate_any(ruby: &Ruby, args: &[RValue]) -> Result<Obj<Predicate>, Error> {
-    let checks = predicate_checks(ruby, args)?;
-    Ok(frozen(ruby, Predicate(core::Predicate::Any { checks })))
-}
-
-fn predicate_not(ruby: &Ruby, args: &[RValue]) -> Result<Obj<Predicate>, Error> {
-    let (check,): (Obj<Predicate>,) = required(args, &["check"])?;
-    check_predicate_depth(ruby, &check.0, 1)?;
-    Ok(frozen(
-        ruby,
-        Predicate(core::Predicate::Not {
-            check: Box::new(check.0.clone()),
-        }),
-    ))
-}
-
 fn predicate_holds(ruby: &Ruby, this: &Predicate, args: &[RValue]) -> Result<bool, Error> {
     let (observation,): (RValue,) = required(args, &["observation"])?;
     Ok(this.0.holds(&host_value(ruby, observation)?))
-}
-
-fn predicate_kind(ruby: &Ruby, this: &Predicate) -> RString {
-    string(
-        ruby,
-        match this.0 {
-            core::Predicate::Present { .. } => "present",
-            core::Predicate::Equals { .. } => "equals",
-            core::Predicate::Within { .. } => "within",
-            core::Predicate::Contains { .. } => "contains",
-            core::Predicate::Words { .. } => "words",
-            core::Predicate::All { .. } => "all",
-            core::Predicate::Any { .. } => "any",
-            core::Predicate::Not { .. } => "not",
-        },
-    )
-}
-
-fn predicate_path(ruby: &Ruby, this: &Predicate) -> Result<Option<RArray>, Error> {
-    this.0.path().map(|path| strings(ruby, path)).transpose()
-}
-
-fn predicate_expected(ruby: &Ruby, this: &Predicate) -> Option<Obj<Value>> {
-    match &this.0 {
-        core::Predicate::Equals { expected, .. } => Some(frozen(ruby, Value(expected.clone()))),
-        _ => None,
-    }
-}
-
-fn predicate_item(ruby: &Ruby, this: &Predicate) -> Option<Obj<Value>> {
-    match &this.0 {
-        core::Predicate::Contains { item, .. } => Some(frozen(ruby, Value(item.clone()))),
-        _ => None,
-    }
-}
-
-fn predicate_allowed(ruby: &Ruby, this: &Predicate) -> Result<Option<RArray>, Error> {
-    match &this.0 {
-        core::Predicate::Within { allowed, .. } => values(ruby, allowed).map(Some),
-        _ => Ok(None),
-    }
-}
-
-fn predicate_min_words(this: &Predicate) -> Option<i64> {
-    match this.0 {
-        core::Predicate::Words { min_words, .. } => Some(min_words),
-        _ => None,
-    }
-}
-
-fn predicate_max_words(this: &Predicate) -> Option<i64> {
-    match this.0 {
-        core::Predicate::Words { max_words, .. } => Some(max_words),
-        _ => None,
-    }
 }
 
 fn predicates(ruby: &Ruby, checks: &[(String, core::Predicate)]) -> Result<RArray, Error> {
@@ -578,66 +690,55 @@ fn predicates(ruby: &Ruby, checks: &[(String, core::Predicate)]) -> Result<RArra
     )
 }
 
-fn predicate_checks_of(ruby: &Ruby, this: &Predicate) -> Result<RArray, Error> {
-    match &this.0 {
-        core::Predicate::All { checks } | core::Predicate::Any { checks } => {
-            predicates(ruby, checks)
-        }
-        _ => array::<RValue>(ruby, []),
-    }
-}
-
-fn predicate_check(ruby: &Ruby, this: &Predicate) -> Option<Obj<Predicate>> {
-    match &this.0 {
-        core::Predicate::Not { check } => Some(frozen(ruby, Predicate(*check.clone()))),
-        _ => None,
-    }
-}
-
-#[magnus::wrap(class = "GeniusBench::Verification", free_immediately, size)]
 #[derive(Clone)]
 struct Verification(core::Verification);
 wrapped!(Verification, core::Verification);
+sum_type!(Verification, "Verification", c"GeniusBench::Verification");
 
-fn verification_unchecked(ruby: &Ruby) -> Obj<Verification> {
-    frozen(ruby, Verification(core::Verification::Unchecked))
-}
+impl Variants for Verification {
+    const SHAPE: Shape = &[
+        ("Unchecked", &[]),
+        ("Passed", &[]),
+        ("Failed", &[]),
+        ("InvalidSubmission", &[]),
+        ("TimedOut", &[]),
+        ("HarnessError", &["detail"]),
+    ];
 
-fn verification_passed(ruby: &Ruby) -> Obj<Verification> {
-    frozen(ruby, Verification(core::Verification::Passed))
-}
+    fn variant(&self) -> usize {
+        match self.0 {
+            core::Verification::Unchecked => 0,
+            core::Verification::Passed => 1,
+            core::Verification::Failed => 2,
+            core::Verification::InvalidSubmission => 3,
+            core::Verification::TimedOut => 4,
+            core::Verification::HarnessError { .. } => 5,
+        }
+    }
 
-fn verification_failed(ruby: &Ruby) -> Obj<Verification> {
-    frozen(ruby, Verification(core::Verification::Failed))
-}
+    fn values(&self, ruby: &Ruby) -> Result<Vec<RValue>, Error> {
+        Ok(match &self.0 {
+            core::Verification::HarnessError { detail } => vec![string(ruby, detail).as_value()],
+            _ => vec![],
+        })
+    }
 
-fn verification_invalid_submission(ruby: &Ruby) -> Obj<Verification> {
-    frozen(ruby, Verification(core::Verification::InvalidSubmission))
-}
-
-fn verification_timed_out(ruby: &Ruby) -> Obj<Verification> {
-    frozen(ruby, Verification(core::Verification::TimedOut))
-}
-
-fn verification_harness_error(ruby: &Ruby, args: &[RValue]) -> Result<Obj<Verification>, Error> {
-    let (detail,): (RValue,) = required(args, &["detail"])?;
-    Ok(frozen(
-        ruby,
-        Verification(core::Verification::HarnessError {
-            detail: text(ruby, detail)?,
-        }),
-    ))
+    fn build(ruby: &Ruby, variant: usize, fields: Vec<RValue>) -> Result<Self, Error> {
+        Ok(Self(match variant {
+            0 => core::Verification::Unchecked,
+            1 => core::Verification::Passed,
+            2 => core::Verification::Failed,
+            3 => core::Verification::InvalidSubmission,
+            4 => core::Verification::TimedOut,
+            _ => core::Verification::HarnessError {
+                detail: text(ruby, fields[0])?,
+            },
+        }))
+    }
 }
 
 fn verification_status(ruby: &Ruby, this: &Verification) -> RString {
     string(ruby, this.0.status())
-}
-
-fn verification_detail(ruby: &Ruby, this: &Verification) -> Option<RString> {
-    match &this.0 {
-        core::Verification::HarnessError { detail } => Some(string(ruby, detail)),
-        _ => None,
-    }
 }
 
 #[magnus::wrap(class = "GeniusBench::Outcome", free_immediately, size)]
@@ -693,10 +794,59 @@ fn outcome_observation(ruby: &Ruby, this: &Outcome) -> Obj<Value> {
     frozen(ruby, Value(this.0.observation()))
 }
 
-#[magnus::wrap(class = "GeniusBench::Assessment", free_immediately, size)]
 #[derive(Clone)]
 struct Assessment(core::Assessment);
 wrapped!(Assessment, core::Assessment);
+sum_type!(Assessment, "Assessment", c"GeniusBench::Assessment");
+
+impl Variants for Assessment {
+    const SHAPE: Shape = &[
+        ("Check", &["predicate", "observation"]),
+        ("All", &["checks"]),
+    ];
+
+    fn variant(&self) -> usize {
+        match self.0 {
+            core::Assessment::Check { .. } => 0,
+            core::Assessment::All { .. } => 1,
+        }
+    }
+
+    fn values(&self, ruby: &Ruby) -> Result<Vec<RValue>, Error> {
+        Ok(match &self.0 {
+            core::Assessment::Check {
+                predicate,
+                observation,
+            } => vec![
+                frozen(ruby, Predicate(predicate.clone())).as_value(),
+                frozen(ruby, Value(observation.clone())).as_value(),
+            ],
+            core::Assessment::All { checks } => vec![
+                pairs(
+                    ruby,
+                    checks.iter().map(|(name, check)| {
+                        (name.clone(), frozen(ruby, Assessment(check.clone())))
+                    }),
+                )?
+                .as_value(),
+            ],
+        })
+    }
+
+    fn build(ruby: &Ruby, variant: usize, fields: Vec<RValue>) -> Result<Self, Error> {
+        Ok(Self(match variant {
+            0 => core::Assessment::Check {
+                predicate: <&Predicate>::try_convert(fields[0])?.0.clone(),
+                observation: host_value(ruby, fields[1])?,
+            },
+            _ => core::Assessment::All {
+                checks: named(ruby, fields[0], |item| {
+                    Ok(<&Assessment>::try_convert(item)?.0.clone())
+                })?,
+            },
+        }))
+    }
+}
 
 fn assessment_new(ruby: &Ruby, args: &[RValue]) -> Result<Obj<Assessment>, Error> {
     let (predicate, observation): (Obj<Predicate>, RValue) =
@@ -722,46 +872,6 @@ fn assessment_observed(ruby: &Ruby, this: &Assessment) -> Option<Obj<Value>> {
 
 fn assessment_scores(ruby: &Ruby, this: &Assessment) -> Result<RArray, Error> {
     pairs(ruby, this.0.scores())
-}
-
-fn assessment_kind(ruby: &Ruby, this: &Assessment) -> RString {
-    string(
-        ruby,
-        match this.0 {
-            core::Assessment::Check { .. } => "check",
-            core::Assessment::All { .. } => "all",
-        },
-    )
-}
-
-fn assessment_predicate(ruby: &Ruby, this: &Assessment) -> Option<Obj<Predicate>> {
-    match &this.0 {
-        core::Assessment::Check { predicate, .. } => {
-            Some(frozen(ruby, Predicate(predicate.clone())))
-        }
-        _ => None,
-    }
-}
-
-fn assessment_observation(ruby: &Ruby, this: &Assessment) -> Option<Obj<Value>> {
-    match &this.0 {
-        core::Assessment::Check { observation, .. } => {
-            Some(frozen(ruby, Value(observation.clone())))
-        }
-        _ => None,
-    }
-}
-
-fn assessment_checks(ruby: &Ruby, this: &Assessment) -> Result<RArray, Error> {
-    match &this.0 {
-        core::Assessment::All { checks } => pairs(
-            ruby,
-            checks
-                .iter()
-                .map(|(name, check)| (name.clone(), frozen(ruby, Assessment(check.clone())))),
-        ),
-        _ => array::<RValue>(ruby, []),
-    }
 }
 
 #[magnus::wrap(class = "GeniusBench::SourceFile", free_immediately, size)]
@@ -942,75 +1052,55 @@ fn rubric_text_rule(ruby: &Ruby, this: &Rubric) -> Option<Obj<TextRule>> {
         .map(|rule| frozen(ruby, TextRule(rule)))
 }
 
-#[magnus::wrap(class = "GeniusBench::Criterion", free_immediately, size)]
 #[derive(Clone)]
 struct Criterion(core::Criterion);
 wrapped!(Criterion, core::Criterion);
+sum_type!(Criterion, "Criterion", c"GeniusBench::Criterion");
 
-fn criterion_code(ruby: &Ruby, args: &[RValue]) -> Result<Obj<Criterion>, Error> {
-    let (verifier,): (Obj<Verifier>,) = required(args, &["verifier"])?;
-    Ok(frozen(
-        ruby,
-        Criterion(core::Criterion::Code {
-            verifier: verifier.0.clone(),
-        }),
-    ))
-}
+impl Variants for Criterion {
+    const SHAPE: Shape = &[
+        ("Code", &["verifier"]),
+        ("Answer", &["rubric"]),
+        ("State", &["predicate"]),
+    ];
 
-fn criterion_answer(ruby: &Ruby, args: &[RValue]) -> Result<Obj<Criterion>, Error> {
-    let (rubric,): (Obj<Rubric>,) = required(args, &["rubric"])?;
-    Ok(frozen(
-        ruby,
-        Criterion(core::Criterion::Answer {
-            rubric: rubric.0.clone(),
-        }),
-    ))
-}
+    fn variant(&self) -> usize {
+        match self.0 {
+            core::Criterion::Code { .. } => 0,
+            core::Criterion::Answer { .. } => 1,
+            core::Criterion::State { .. } => 2,
+        }
+    }
 
-fn criterion_state(ruby: &Ruby, args: &[RValue]) -> Result<Obj<Criterion>, Error> {
-    let (predicate,): (Obj<Predicate>,) = required(args, &["predicate"])?;
-    Ok(frozen(
-        ruby,
-        Criterion(core::Criterion::State {
-            predicate: predicate.0.clone(),
-        }),
-    ))
+    fn values(&self, ruby: &Ruby) -> Result<Vec<RValue>, Error> {
+        Ok(vec![match &self.0 {
+            core::Criterion::Code { verifier } => {
+                frozen(ruby, Verifier(verifier.clone())).as_value()
+            }
+            core::Criterion::Answer { rubric } => frozen(ruby, Rubric(rubric.clone())).as_value(),
+            core::Criterion::State { predicate } => {
+                frozen(ruby, Predicate(predicate.clone())).as_value()
+            }
+        }])
+    }
+
+    fn build(_ruby: &Ruby, variant: usize, fields: Vec<RValue>) -> Result<Self, Error> {
+        Ok(Self(match variant {
+            0 => core::Criterion::Code {
+                verifier: <&Verifier>::try_convert(fields[0])?.0.clone(),
+            },
+            1 => core::Criterion::Answer {
+                rubric: <&Rubric>::try_convert(fields[0])?.0.clone(),
+            },
+            _ => core::Criterion::State {
+                predicate: <&Predicate>::try_convert(fields[0])?.0.clone(),
+            },
+        }))
+    }
 }
 
 fn criterion_condition(ruby: &Ruby, this: &Criterion) -> Obj<Predicate> {
     frozen(ruby, Predicate(this.0.condition()))
-}
-
-fn criterion_kind(ruby: &Ruby, this: &Criterion) -> RString {
-    string(
-        ruby,
-        match this.0 {
-            core::Criterion::Code { .. } => "code",
-            core::Criterion::Answer { .. } => "answer",
-            core::Criterion::State { .. } => "state",
-        },
-    )
-}
-
-fn criterion_verifier(ruby: &Ruby, this: &Criterion) -> Option<Obj<Verifier>> {
-    match &this.0 {
-        core::Criterion::Code { verifier } => Some(frozen(ruby, Verifier(verifier.clone()))),
-        _ => None,
-    }
-}
-
-fn criterion_rubric(ruby: &Ruby, this: &Criterion) -> Option<Obj<Rubric>> {
-    match &this.0 {
-        core::Criterion::Answer { rubric } => Some(frozen(ruby, Rubric(rubric.clone()))),
-        _ => None,
-    }
-}
-
-fn criterion_predicate(ruby: &Ruby, this: &Criterion) -> Option<Obj<Predicate>> {
-    match &this.0 {
-        core::Criterion::State { predicate } => Some(frozen(ruby, Predicate(predicate.clone()))),
-        _ => None,
-    }
 }
 
 #[magnus::wrap(class = "GeniusBench::Reference", free_immediately, size)]
@@ -1275,12 +1365,9 @@ fn init(ruby: &Ruby) -> Result<(), Error> {
     let value = module.define_class("Value", object)?;
     identity!(value, Value);
     value.define_singleton_method("from_ruby", function!(value_from_ruby, -1))?;
-    value.define_method("kind", method!(value_kind, 0))?;
-    value.define_method("scalar", method!(value_scalar, 0))?;
-    value.define_method("items", method!(value_items, 0))?;
-    value.define_method("fields", method!(value_fields, 0))?;
     value.define_method("get", method!(value_get, -1))?;
     value.define_method("equal_to?", method!(value_equal_to, -1))?;
+    define_variants!(ruby, value, Value);
 
     let record = module.define_class("Record", object)?;
     identity!(record, Record);
@@ -1290,39 +1377,13 @@ fn init(ruby: &Ruby) -> Result<(), Error> {
 
     let predicate = module.define_class("Predicate", object)?;
     identity!(predicate, Predicate);
-    predicate.define_singleton_method("present", function!(predicate_present, -1))?;
-    predicate.define_singleton_method("equals", function!(predicate_equals, -1))?;
-    predicate.define_singleton_method("within", function!(predicate_within, -1))?;
-    predicate.define_singleton_method("contains", function!(predicate_contains, -1))?;
-    predicate.define_singleton_method("words", function!(predicate_words, -1))?;
-    predicate.define_singleton_method("all", function!(predicate_all, -1))?;
-    predicate.define_singleton_method("any", function!(predicate_any, -1))?;
-    predicate.define_singleton_method("not", function!(predicate_not, -1))?;
     predicate.define_method("holds?", method!(predicate_holds, -1))?;
-    predicate.define_method("kind", method!(predicate_kind, 0))?;
-    predicate.define_method("path", method!(predicate_path, 0))?;
-    predicate.define_method("expected", method!(predicate_expected, 0))?;
-    predicate.define_method("item", method!(predicate_item, 0))?;
-    predicate.define_method("allowed", method!(predicate_allowed, 0))?;
-    predicate.define_method("min_words", method!(predicate_min_words, 0))?;
-    predicate.define_method("max_words", method!(predicate_max_words, 0))?;
-    predicate.define_method("checks", method!(predicate_checks_of, 0))?;
-    predicate.define_method("check", method!(predicate_check, 0))?;
+    define_variants!(ruby, predicate, Predicate);
 
     let verification = module.define_class("Verification", object)?;
     identity!(verification, Verification);
-    verification.define_singleton_method("unchecked", function!(verification_unchecked, 0))?;
-    verification.define_singleton_method("passed", function!(verification_passed, 0))?;
-    verification.define_singleton_method("failed", function!(verification_failed, 0))?;
-    verification.define_singleton_method(
-        "invalid_submission",
-        function!(verification_invalid_submission, 0),
-    )?;
-    verification.define_singleton_method("timed_out", function!(verification_timed_out, 0))?;
-    verification
-        .define_singleton_method("harness_error", function!(verification_harness_error, -1))?;
     verification.define_method("status", method!(verification_status, 0))?;
-    verification.define_method("detail", method!(verification_detail, 0))?;
+    define_variants!(ruby, verification, Verification);
 
     let outcome = module.define_class("Outcome", object)?;
     identity!(outcome, Outcome);
@@ -1339,10 +1400,7 @@ fn init(ruby: &Ruby) -> Result<(), Error> {
     assessment.define_method("passed?", method!(assessment_passed, 0))?;
     assessment.define_method("observed", method!(assessment_observed, 0))?;
     assessment.define_method("scores", method!(assessment_scores, 0))?;
-    assessment.define_method("kind", method!(assessment_kind, 0))?;
-    assessment.define_method("predicate", method!(assessment_predicate, 0))?;
-    assessment.define_method("observation", method!(assessment_observation, 0))?;
-    assessment.define_method("checks", method!(assessment_checks, 0))?;
+    define_variants!(ruby, assessment, Assessment);
 
     let file = module.define_class("SourceFile", object)?;
     identity!(file, SourceFile);
@@ -1380,14 +1438,8 @@ fn init(ruby: &Ruby) -> Result<(), Error> {
 
     let criterion = module.define_class("Criterion", object)?;
     identity!(criterion, Criterion);
-    criterion.define_singleton_method("code", function!(criterion_code, -1))?;
-    criterion.define_singleton_method("answer", function!(criterion_answer, -1))?;
-    criterion.define_singleton_method("state", function!(criterion_state, -1))?;
     criterion.define_method("condition", method!(criterion_condition, 0))?;
-    criterion.define_method("kind", method!(criterion_kind, 0))?;
-    criterion.define_method("verifier", method!(criterion_verifier, 0))?;
-    criterion.define_method("rubric", method!(criterion_rubric, 0))?;
-    criterion.define_method("predicate", method!(criterion_predicate, 0))?;
+    define_variants!(ruby, criterion, Criterion);
 
     let reference = module.define_class("Reference", object)?;
     identity!(reference, Reference);
