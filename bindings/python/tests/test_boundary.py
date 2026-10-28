@@ -14,8 +14,8 @@ def state_task():
         id="state",
         fixture=[],
         instruction=k.Instruction(prompt="observe"),
-        criterion=k.Criterion.state(
-            predicate=k.Predicate.equals(
+        criterion=k.Criterion.State(
+            predicate=k.Predicate.Equals(
                 path=["response", "answer"], expected=k.Value.from_python(value=42)
             )
         ),
@@ -56,7 +56,7 @@ def test_snapshots_and_projection():
         id="code",
         fixture=fixture,
         instruction=k.Instruction(prompt="change"),
-        criterion=k.Criterion.code(verifier=verifier),
+        criterion=k.Criterion.Code(verifier=verifier),
         allowed_files=paths,
         reference=k.Reference(edits=[], completion=k.Value.from_python(value="secret")),
     )
@@ -95,16 +95,16 @@ def test_values_protocol_records_and_failures():
     nested.append(2)
     assert len(converted.get(path=["values"]).items) == 1
     assert converted.get(path=["missing"]) is None
-    assert converted.get(path=["null"]).kind == "null"
+    assert isinstance(converted.get(path=["null"]), k.Value.Null)
     duplicate = k.Value.from_python(value=k.Record(fields=[("x", 1), ("x", 2)]))
-    assert duplicate.get(path=["x"]).scalar == 1
+    assert duplicate.get(path=["x"]).value == 1
     assert len(duplicate.fields) == 2
     assert duplicate.equal(other=k.Value.from_python(value={"x": 1}))
     assert not k.Value.from_python(value=True).equal(other=k.Value.from_python(value=1))
     assert not k.Value.from_python(value=1).equal(other=k.Value.from_python(value=1.0))
-    assert k.Value.from_python(value=Custom()).get(path=["answer"]).scalar == 42
+    assert k.Value.from_python(value=Custom()).get(path=["answer"]).value == 42
     for number in (-(2**63), -(2**53) - 1, 2**53 - 1, 2**53, 2**53 + 1, 2**63 - 1):
-        scalar = k.Value.from_python(value=number).scalar
+        scalar = k.Value.from_python(value=number).value
         assert type(scalar) is int
         assert scalar == number
     for bits in (
@@ -114,7 +114,7 @@ def test_values_protocol_records_and_failures():
         0x4340000000000001,
     ):
         number = struct.unpack(">d", bits.to_bytes(8, "big"))[0]
-        scalar = k.Value.from_python(value=number).scalar
+        scalar = k.Value.from_python(value=number).value
         assert type(scalar) is float
         assert struct.pack(">d", scalar) == bits.to_bytes(8, "big")
     for number in (-(2**63) - 1, 2**63):
@@ -155,12 +155,12 @@ def test_conversion_snapshots_before_callbacks(container):
     elif container == "list":
         source = [Mutating(), 2]
         converted = k.Value.from_python(value=source)
-        assert [item.scalar for item in converted.items] == [1, 2]
+        assert [item.value for item in converted.items] == [1, 2]
         return
     else:
         source = [("hook", Mutating()), ("tail", 2)]
         converted = k.Value.from_python(value=k.Record(fields=source))
-    assert [(name, item.scalar) for name, item in converted.fields] == [
+    assert [(name, item.value) for name, item in converted.fields] == [
         ("hook", 1),
         ("tail", 2),
     ]
@@ -176,11 +176,11 @@ def test_native_sequence_snapshots_ignore_overridden_iterators():
             raise AssertionError("Overridden tuple iterator")
 
     for source in (List([1, 2]), Tuple((1, 2))):
-        assert [item.scalar for item in k.Value.from_python(value=source).items] == [
+        assert [item.value for item in k.Value.from_python(value=source).items] == [
             1,
             2,
         ]
-    assert k.Record(fields=List([("x", 1)])).fields[0][1].scalar == 1
+    assert k.Record(fields=List([("x", 1)])).fields[0][1].value == 1
 
 
 def test_native_validation_and_harness_failures():
@@ -189,7 +189,7 @@ def test_native_validation_and_harness_failures():
             id="bad id",
             fixture=[k.SourceFile(path="../bad", contents="")],
             instruction=k.Instruction(prompt=""),
-            criterion=k.Criterion.code(
+            criterion=k.Criterion.Code(
                 verifier=k.Verifier(
                     inputs=[],
                     files=[],
@@ -211,9 +211,9 @@ def test_native_validation_and_harness_failures():
         error.issues[0].field = "changed"
     declaration = state_task()
     for verification in (
-        k.Verification.failed(),
-        k.Verification.timed_out(),
-        k.Verification.invalid_submission(),
+        k.Verification.Failed(),
+        k.Verification.TimedOut(),
+        k.Verification.InvalidSubmission(),
     ):
         assert declaration.grade(
             outcome=k.Outcome(
@@ -227,7 +227,7 @@ def test_native_validation_and_harness_failures():
         declaration.assess(
             outcome=k.Outcome(
                 changed_files=[],
-                verification=k.Verification.harness_error(detail="worker missing"),
+                verification=k.Verification.HarnessError(detail="worker missing"),
                 response=k.Value.from_python(value=None),
                 facts=[],
             )
@@ -242,7 +242,7 @@ def test_explicit_adapters():
         answer: int
 
     converted = k.from_dataclass(value=Answer(answer=42))
-    assert converted.get(path=["answer"]).scalar == 42
+    assert converted.get(path=["answer"]).value == 42
     with pytest.raises(TypeError):
         k.from_dataclass(value={"answer": 42})
     pydantic = pytest.importorskip("pydantic")
@@ -257,14 +257,14 @@ def test_explicit_adapters():
 
 def test_keyword_grading_and_reserved_facts():
     declaration = state_task()
-    assert declaration.reference.completion.get(path=["answer"]).scalar == 42
-    assert declaration.grade_reference(verification=k.Verification.unchecked()) == (
+    assert declaration.reference.completion.get(path=["answer"]).value == 42
+    assert declaration.grade_reference(verification=k.Verification.Unchecked()) == (
         ("correctness", True),
         ("scope", True),
     )
     outcome = k.Outcome(
         changed_files=[],
-        verification=k.Verification.unchecked(),
+        verification=k.Verification.Unchecked(),
         response=k.Value.from_python(value={"answer": 42}),
         facts=[("response", k.Value.from_python(value=None))],
     )
@@ -276,7 +276,7 @@ def test_keyword_grading_and_reserved_facts():
     with pytest.raises(TypeError):
         declaration.assess(outcome)
     with pytest.raises(TypeError):
-        declaration.grade_reference(k.Verification.unchecked())
+        declaration.grade_reference(k.Verification.Unchecked())
     with pytest.raises(TypeError):
         k.Instruction("prompt")
 
@@ -286,19 +286,19 @@ def test_reference_grading_uses_edits_and_verification():
         id="reference",
         fixture=[k.SourceFile(path="solution.py", contents="original")],
         instruction=k.Instruction(prompt="update"),
-        criterion=k.Criterion.state(
-            predicate=k.Predicate.all(
+        criterion=k.Criterion.State(
+            predicate=k.Predicate.All(
                 checks=[
                     (
                         "verification",
-                        k.Predicate.equals(
+                        k.Predicate.Equals(
                             path=["verification"],
                             expected=k.Value.from_python(value="passed"),
                         ),
                     ),
                     (
                         "edits",
-                        k.Predicate.equals(
+                        k.Predicate.Equals(
                             path=["changed_files"],
                             expected=k.Value.from_python(value=["solution.py"]),
                         ),
@@ -312,17 +312,17 @@ def test_reference_grading_uses_edits_and_verification():
             completion=None,
         ),
     )
-    assert task.grade_reference(verification=k.Verification.passed()) == (
+    assert task.grade_reference(verification=k.Verification.Passed()) == (
         ("correctness", True),
         ("scope", True),
     )
-    assert task.grade_reference(verification=k.Verification.failed()) == (
+    assert task.grade_reference(verification=k.Verification.Failed()) == (
         ("correctness", False),
         ("scope", True),
     )
     with pytest.raises(k.GradingError, match="worker missing"):
         task.grade_reference(
-            verification=k.Verification.harness_error(detail="worker missing")
+            verification=k.Verification.HarnessError(detail="worker missing")
         )
 
 
@@ -330,9 +330,9 @@ def test_value_parameters_accept_native_values():
     native = {"answer": 42, "items": [1, "x"]}
     value = k.Value.from_python(value=native)
     for given in (native, value):
-        assert k.Predicate.equals(path=[], expected=given).expected.equal(other=value)
-        assert k.Predicate.contains(path=[], item=given).item.equal(other=value)
-        assert k.Predicate.within(path=[], allowed=[given])
+        assert k.Predicate.Equals(path=[], expected=given).expected.equal(other=value)
+        assert k.Predicate.Contains(path=[], item=given).item.equal(other=value)
+        assert k.Predicate.Within(path=[], allowed=[given])
         assert (
             k.Rubric(expected=[("answer", given)], text_rule=None)
             .expected[0][1]
@@ -340,34 +340,39 @@ def test_value_parameters_accept_native_values():
         )
         outcome = k.Outcome(
             changed_files=[],
-            verification=k.Verification.unchecked(),
+            verification=k.Verification.Unchecked(),
             response=given,
             facts=[("state", given)],
         )
         assert outcome.response.equal(other=value)
         assert outcome.facts[0][1].equal(other=value)
-        present = k.Predicate.present(path=["answer"])
+        present = k.Predicate.Present(path=["answer"])
         assert present.holds(observation=given)
         assert k.Assessment(predicate=present, observation=given).passed()
         assert value.equal(other=given)
-    allowed = k.Predicate.within(path=[], allowed=[1, "x", None]).allowed
-    assert [item.scalar for item in allowed] == [1, "x", None]
-    present = k.Predicate.present(path=[])
+    allowed = k.Predicate.Within(path=[], allowed=[1, "x", None]).allowed
+    assert [type(item) for item in allowed] == [
+        k.Value.Int,
+        k.Value.String,
+        k.Value.Null,
+    ]
+    assert [item.value for item in allowed[:2]] == [1, "x"]
+    present = k.Predicate.Present(path=[])
     for build in (
-        lambda bad: k.Predicate.equals(path=[], expected=bad),
-        lambda bad: k.Predicate.within(path=[], allowed=[bad]),
-        lambda bad: k.Predicate.contains(path=[], item=bad),
+        lambda bad: k.Predicate.Equals(path=[], expected=bad),
+        lambda bad: k.Predicate.Within(path=[], allowed=[bad]),
+        lambda bad: k.Predicate.Contains(path=[], item=bad),
         lambda bad: present.holds(observation=bad),
         lambda bad: k.Rubric(expected=[("answer", bad)], text_rule=None),
         lambda bad: k.Outcome(
             changed_files=[],
-            verification=k.Verification.unchecked(),
+            verification=k.Verification.Unchecked(),
             response=bad,
             facts=[],
         ),
         lambda bad: k.Outcome(
             changed_files=[],
-            verification=k.Verification.unchecked(),
+            verification=k.Verification.Unchecked(),
             response=None,
             facts=[("state", bad)],
         ),
@@ -410,7 +415,7 @@ def test_nested_adapters_and_bounded_conversion():
 
     converted = k.from_dataclass(value=Parent(children=[Child(answer=42)]))
     children = converted.get(path=["children"])
-    assert children.items[0].get(path=["answer"]).scalar == 42
+    assert children.items[0].get(path=["answer"]).value == 42
     recursive = Parent(children=[])
     recursive.children.append(recursive)
     with pytest.raises(ValueError, match="[Cc]ycl"):
@@ -444,32 +449,34 @@ def test_bounded_native_value_composition(container):
         else:
             k.Record(fields=[("x", nested)])
     converted = k.Value.from_python(value=nested)
-    assert converted.kind == ("list" if container == "value" else "record")
+    assert isinstance(
+        converted, k.Value.List if container == "value" else k.Value.Record
+    )
 
 
-@pytest.mark.parametrize("operator", ["not_", "all", "any"])
+@pytest.mark.parametrize("operator", ["Not", "All", "Any"])
 def test_bounded_native_predicate_composition(operator):
-    if operator != "not_":
+    if operator != "Not":
         wide = getattr(k.Predicate, operator)(
-            checks=[(str(index), k.Predicate.present(path=[])) for index in range(300)]
+            checks=[(str(index), k.Predicate.Present(path=[])) for index in range(300)]
         )
         assert len(wide.checks) == 300
         assert wide.holds(observation=k.Value.from_python(value=1))
-    predicate = k.Predicate.present(path=[])
+    predicate = k.Predicate.Present(path=[])
     for _ in range(255):
         predicate = (
-            k.Predicate.not_(check=predicate)
-            if operator == "not_"
+            k.Predicate.Not(check=predicate)
+            if operator == "Not"
             else getattr(k.Predicate, operator)(checks=[("x", predicate)])
         )
     with pytest.raises(ValueError, match="nesting"):
-        if operator == "not_":
-            k.Predicate.not_(check=predicate)
+        if operator == "Not":
+            k.Predicate.Not(check=predicate)
         else:
             getattr(k.Predicate, operator)(checks=[("x", predicate)])
     assert k.Assessment(
         predicate=predicate, observation=k.Value.from_python(value=1)
-    ).passed() is (operator != "not_")
+    ).passed() is (operator != "Not")
 
 
 def test_bounded_generated_observations_and_task_checks():
@@ -478,13 +485,13 @@ def test_bounded_generated_observations_and_task_checks():
         nested = k.Value.from_python(value=[nested])
     outcome = k.Outcome(
         changed_files=[],
-        verification=k.Verification.unchecked(),
+        verification=k.Verification.Unchecked(),
         response=nested,
         facts=[("fact", nested)],
     )
     observation = outcome.observation()
     assessment = k.Assessment(
-        predicate=k.Predicate.present(path=[]), observation=observation
+        predicate=k.Predicate.Present(path=[]), observation=observation
     )
     for exposed in (observation, assessment.observation, assessment.observed()):
         with pytest.raises(ValueError, match="nesting"):
@@ -493,7 +500,7 @@ def test_bounded_generated_observations_and_task_checks():
         with pytest.raises(ValueError, match="nesting"):
             k.Outcome(
                 changed_files=[],
-                verification=k.Verification.unchecked(),
+                verification=k.Verification.Unchecked(),
                 response=response,
                 facts=facts,
             )
@@ -501,21 +508,259 @@ def test_bounded_generated_observations_and_task_checks():
         id="deep-reference",
         fixture=[],
         instruction=k.Instruction(prompt="observe"),
-        criterion=k.Criterion.state(predicate=k.Predicate.present(path=[])),
+        criterion=k.Criterion.State(predicate=k.Predicate.Present(path=[])),
         allowed_files=[],
         reference=k.Reference(edits=[], completion=observation),
     )
     with pytest.raises(ValueError, match="nesting"):
-        reference_task.grade_reference(verification=k.Verification.unchecked())
-    predicate = k.Predicate.present(path=[])
+        reference_task.grade_reference(verification=k.Verification.Unchecked())
+    predicate = k.Predicate.Present(path=[])
     for _ in range(255):
-        predicate = k.Predicate.not_(check=predicate)
+        predicate = k.Predicate.Not(check=predicate)
     with pytest.raises(ValueError, match="nesting"):
         k.Task(
             id="deep",
             fixture=[],
             instruction=k.Instruction(prompt="observe"),
-            criterion=k.Criterion.state(predicate=predicate),
+            criterion=k.Criterion.State(predicate=predicate),
             allowed_files=[],
             reference=k.Reference(edits=[], completion=k.Value.from_python(value=None)),
         )
+
+
+def variants(base):
+    return [
+        member
+        for member in vars(base).values()
+        if isinstance(member, type) and issubclass(member, base)
+    ]
+
+
+def test_sum_types_expose_closed_frozen_variants():
+    expected = {
+        k.Value: {"Null", "Bool", "Int", "Float", "String", "List", "Record"},
+        k.Predicate: {
+            "Present",
+            "Equals",
+            "Within",
+            "Contains",
+            "Words",
+            "All",
+            "Any",
+            "Not",
+        },
+        k.Verification: {
+            "Unchecked",
+            "Passed",
+            "Failed",
+            "InvalidSubmission",
+            "TimedOut",
+            "HarnessError",
+        },
+        k.Assessment: {"Check", "All"},
+        k.Criterion: {"Code", "Answer", "State"},
+    }
+    for base, names in expected.items():
+        members = variants(base)
+        assert {member.__name__ for member in members} == names
+        for member in members:
+            assert member.__module__ == "kernel._native"
+            assert member.__qualname__ == f"{base.__name__}.{member.__name__}"
+            with pytest.raises(TypeError):
+                type("Extended", (member,), {})
+        with pytest.raises(TypeError):
+            base()
+        for removed in ("kind", "scalar", "detail", "path", "checks", "predicate"):
+            assert not hasattr(base, removed)
+    with pytest.raises(AttributeError):
+        k.Verification.HarnessError(detail="x").detail = "changed"
+    with pytest.raises(TypeError):
+        k.Verification.HarnessError("positional")
+    with pytest.raises(TypeError):
+        k.Predicate.Equals(["path"], 1)
+
+
+def test_value_variants_narrow_by_isinstance_and_match():
+    converted = k.Value.from_python(
+        value={"n": None, "b": True, "i": 1, "f": 1.5, "s": "x", "l": [1], "r": {}}
+    )
+    assert isinstance(converted, k.Value.Record)
+    seen = {}
+    for name, item in converted.fields:
+        assert isinstance(item, k.Value)
+        match item:
+            case k.Value.Null():
+                seen[name] = None
+            case k.Value.Bool(flag):
+                seen[name] = flag
+            case k.Value.Int(number):
+                seen[name] = number
+            case k.Value.Float(number):
+                seen[name] = number
+            case k.Value.String(text):
+                seen[name] = text
+            case k.Value.List(items):
+                seen[name] = [entry.value for entry in items]
+            case k.Value.Record(fields):
+                seen[name] = dict(fields)
+    assert seen == {
+        "n": None,
+        "b": True,
+        "i": 1,
+        "f": 1.5,
+        "s": "x",
+        "l": [1],
+        "r": {},
+    }
+    built = k.Value.Record(
+        fields=[
+            ("list", k.Value.List(items=[k.Value.Int(value=1), 2])),
+            ("text", k.Value.String(value="x")),
+            ("null", k.Value.Null()),
+            ("flag", k.Value.Bool(value=False)),
+            ("ratio", k.Value.Float(value=0.5)),
+        ]
+    )
+    assert built.equal(
+        other={"list": [1, 2], "text": "x", "null": None, "flag": False, "ratio": 0.5}
+    )
+    assert isinstance(k.Record(fields=[("x", 1)]).__kernel_value__(), k.Value.Record)
+    with pytest.raises(ValueError, match="nesting"):
+        nested = k.Value.Null()
+        for _ in range(257):
+            nested = k.Value.List(items=[nested])
+
+
+def test_predicate_variants_narrow_by_isinstance_and_match():
+    leaf = k.Predicate.Present(path=["a"])
+    built = [
+        leaf,
+        k.Predicate.Equals(path=["a"], expected={"x": 1}),
+        k.Predicate.Within(path=["a"], allowed=[1, "x"]),
+        k.Predicate.Contains(path=["a"], item=1),
+        k.Predicate.Words(path=["a"], min_words=1, max_words=2),
+        k.Predicate.All(checks=[("leaf", leaf)]),
+        k.Predicate.Any(checks=[("leaf", leaf)]),
+        k.Predicate.Not(check=leaf),
+    ]
+    summaries = []
+    for predicate in built:
+        assert isinstance(predicate, k.Predicate)
+        match predicate:
+            case k.Predicate.Present(path):
+                summaries.append(("present", path))
+            case k.Predicate.Equals(path, expected):
+                summaries.append(("equals", path, expected.get(path=["x"]).value))
+            case k.Predicate.Within(path, allowed):
+                summaries.append(("within", path, len(allowed)))
+            case k.Predicate.Contains(path, item):
+                summaries.append(("contains", path, item.value))
+            case k.Predicate.Words(path, low, high):
+                summaries.append(("words", path, low, high))
+            case k.Predicate.All(checks):
+                summaries.append(("all", [name for name, _ in checks]))
+            case k.Predicate.Any(checks):
+                summaries.append(("any", [name for name, _ in checks]))
+            case k.Predicate.Not(check):
+                summaries.append(("not", type(check)))
+    assert summaries == [
+        ("present", ("a",)),
+        ("equals", ("a",), 1),
+        ("within", ("a",), 2),
+        ("contains", ("a",), 1),
+        ("words", ("a",), 1, 2),
+        ("all", ["leaf"]),
+        ("any", ["leaf"]),
+        ("not", k.Predicate.Present),
+    ]
+    assert isinstance(built[5].checks[0][1], k.Predicate.Present)
+
+
+def test_verification_variants_narrow_and_round_trip():
+    built = [
+        k.Verification.Unchecked(),
+        k.Verification.Passed(),
+        k.Verification.Failed(),
+        k.Verification.InvalidSubmission(),
+        k.Verification.TimedOut(),
+        k.Verification.HarnessError(detail="worker missing"),
+    ]
+    assert [verification.status for verification in built] == [
+        "unchecked",
+        "passed",
+        "failed",
+        "invalid_submission",
+        "timed_out",
+        "harness_error",
+    ]
+    for verification in built:
+        returned = k.Outcome(
+            changed_files=[], verification=verification, response=None, facts=[]
+        ).verification
+        assert type(returned) is type(verification)
+        match returned:
+            case k.Verification.HarnessError(detail):
+                assert detail == "worker missing"
+            case k.Verification.Passed() | k.Verification.Unchecked():
+                assert returned.status in {"passed", "unchecked"}
+            case _:
+                assert not isinstance(returned, k.Verification.HarnessError)
+        assert not hasattr(k.Verification.Passed(), "detail")
+
+
+def test_assessment_and_criterion_variants_narrow():
+    check = k.Predicate.Equals(path=["answer"], expected=42)
+    single = k.Assessment(predicate=check, observation={"answer": 42})
+    match single:
+        case k.Assessment.Check(predicate, observation):
+            assert isinstance(predicate, k.Predicate.Equals)
+            assert observation.get(path=["answer"]).value == 42
+        case _:
+            pytest.fail("Expected a single check")
+    combined = k.Assessment(
+        predicate=k.Predicate.All(checks=[("answer", check)]),
+        observation={"answer": 41},
+    )
+    assert isinstance(combined, k.Assessment.All)
+    assert not hasattr(combined, "predicate")
+    name, nested = combined.checks[0]
+    assert (name, type(nested), combined.passed()) == (
+        "answer",
+        k.Assessment.Check,
+        False,
+    )
+    rebuilt = k.Assessment.All(
+        checks=[("answer", k.Assessment.Check(predicate=check, observation=42))]
+    )
+    assert rebuilt.scores() == (("answer", False),)
+    verifier = k.Verifier(
+        inputs=["a.txt"],
+        files=[],
+        tools=[],
+        command=["true"],
+        stdin="",
+        timeout_seconds=1,
+    )
+    rubric = k.Rubric(expected=[("answer", 42)], text_rule=None)
+    for criterion in (
+        k.Criterion.Code(verifier=verifier),
+        k.Criterion.Answer(rubric=rubric),
+        k.Criterion.State(predicate=check),
+    ):
+        declared = k.Task(
+            id="variant",
+            fixture=[k.SourceFile(path="a.txt", contents="")],
+            instruction=k.Instruction(prompt="observe"),
+            criterion=criterion,
+            allowed_files=["a.txt"],
+            reference=k.Reference(edits=[], completion={"answer": 42}),
+        ).criterion
+        assert type(declared) is type(criterion)
+        match declared:
+            case k.Criterion.Code(verifier):
+                assert verifier.command == ("true",)
+            case k.Criterion.Answer(rubric):
+                assert rubric.expected[0][0] == "answer"
+            case k.Criterion.State(predicate):
+                assert isinstance(predicate, k.Predicate.Equals)
+        assert isinstance(declared.condition(), k.Predicate)

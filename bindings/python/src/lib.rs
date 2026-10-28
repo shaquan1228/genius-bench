@@ -1,3 +1,4 @@
+use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::{PyAttributeError, PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyList, PyString, PyTuple};
@@ -46,15 +47,16 @@ fn convert(
     depth: usize,
 ) -> PyResult<core::Value> {
     if let Ok(value) = value.extract::<PyRef<'_, Value>>() {
-        check_value_depth(&value.0, depth)?;
-        return Ok(value.0.clone());
+        let value = core::Value::from(value.clone());
+        check_value_depth(&value, depth)?;
+        return Ok(value);
     }
     if let Ok(record) = value.extract::<PyRef<'_, Record>>() {
         check_depth(depth + 1, "Kernel value")?;
-        for (_, item) in &record.0 {
+        for (_, item) in &record.0.0 {
             check_value_depth(item, depth + 1)?;
         }
-        return Ok(core::Value::Record(record.0.clone()));
+        return Ok(core::Value::Record(record.0.0.clone()));
     }
     if value.is_none() {
         return Ok(core::Value::Null);
@@ -122,313 +124,382 @@ fn host_fields(fields: Vec<(String, Bound<'_, PyAny>)>) -> PyResult<Vec<(String,
         .collect()
 }
 
+fn host_values(items: &Bound<'_, PyAny>, depth: usize) -> PyResult<Vec<core::Value>> {
+    let mut active = HashSet::new();
+    items
+        .extract::<Vec<Bound<'_, PyAny>>>()?
+        .iter()
+        .map(|item| convert(item, &mut active, depth))
+        .collect()
+}
+
+fn host_record(fields: &Bound<'_, PyAny>) -> PyResult<Vec<(String, core::Value)>> {
+    let mut active = HashSet::new();
+    sequence_snapshot(fields)?
+        .into_iter()
+        .map(|pair| pair.extract::<(String, Bound<'_, PyAny>)>())
+        .collect::<PyResult<Vec<_>>>()?
+        .into_iter()
+        .map(|(name, item)| Ok((name, convert(&item, &mut active, 1)?)))
+        .collect()
+}
+
+fn nested(predicate: core::Predicate) -> PyResult<core::Predicate> {
+    check_predicate_depth(&predicate, 1)?;
+    Ok(predicate)
+}
+
+fn named<'py, C: Clone, B: IntoPyObject<'py>>(
+    py: Python<'py>,
+    items: &[(String, C)],
+    wrap: impl Fn(C) -> B,
+) -> PyResult<Bound<'py, PyAny>> {
+    Ok(PyTuple::new(
+        py,
+        items
+            .iter()
+            .map(|(name, item)| (name.clone(), wrap(item.clone()))),
+    )?
+    .into_any())
+}
+
+fn values<'py>(py: Python<'py>, items: &[core::Value]) -> PyResult<Bound<'py, PyAny>> {
+    Ok(PyTuple::new(py, items.iter().cloned().map(Value::from))?.into_any())
+}
+
+/* Variant fields hold core data, accept native Python input, and read back as tuples
+of typed variants. PyO3 builds each variant's constructor and getters from these types.
+https://pyo3.rs/v0.29.3/class#complex-enums */
+macro_rules! field {
+    ($name:ident($inner:ty), |$input:ident| $extract:expr, |$data:ident, $py:ident| $output:expr) => {
+        #[derive(Clone)]
+        struct $name($inner);
+
+        impl<'py> FromPyObject<'_, 'py> for $name {
+            type Error = PyErr;
+            fn extract($input: Borrowed<'_, 'py, PyAny>) -> PyResult<Self> {
+                Ok(Self($extract))
+            }
+        }
+
+        impl<'py> IntoPyObject<'py> for &$name {
+            type Target = PyAny;
+            type Output = Bound<'py, PyAny>;
+            type Error = PyErr;
+            fn into_pyobject(self, $py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+                let $data = &self.0;
+                $output
+            }
+        }
+    };
+}
+
+field!(Path(Vec<String>), |input| input.extract()?, |path, py| Ok(
+    PyTuple::new(py, path)?.into_any()
+));
+field!(
+    Data(core::Value),
+    |input| host_value(&input)?,
+    |value, py| Value::from(value.clone()).into_bound_py_any(py)
+);
+field!(
+    Allowed(Vec<core::Value>),
+    |input| host_values(&input, 0)?,
+    |items, py| values(py, items)
+);
+field!(
+    Items(Vec<core::Value>),
+    |input| host_values(&input, 1)?,
+    |items, py| values(py, items)
+);
+field!(
+    Fields(Vec<(String, core::Value)>),
+    |input| host_record(&input)?,
+    |fields, py| named(py, fields, Value::from)
+);
+field!(
+    Pred(core::Predicate),
+    |input| input.extract::<Predicate>()?.into(),
+    |predicate, py| Predicate::from(predicate.clone()).into_bound_py_any(py)
+);
+field!(
+    Operand(core::Predicate),
+    |input| nested(input.extract::<Predicate>()?.into())?,
+    |predicate, py| Predicate::from(predicate.clone()).into_bound_py_any(py)
+);
+field!(
+    Checks(Vec<(String, core::Predicate)>),
+    |input| input
+        .extract::<Vec<(String, Predicate)>>()?
+        .into_iter()
+        .map(|(name, check)| Ok((name, nested(check.into())?)))
+        .collect::<PyResult<_>>()?,
+    |checks, py| named(py, checks, Predicate::from)
+);
+field!(
+    Assessments(Vec<(String, core::Assessment)>),
+    |input| input
+        .extract::<Vec<(String, Assessment)>>()?
+        .into_iter()
+        .map(|(name, check)| (name, check.into()))
+        .collect(),
+    |checks, py| named(py, checks, Assessment::from)
+);
+
 #[pyclass(module = "kernel._native", frozen, from_py_object)]
 #[derive(Clone)]
-struct Value(core::Value);
+enum Value {
+    Null {},
+    #[pyo3(constructor = (*, value))]
+    Bool {
+        value: bool,
+    },
+    #[pyo3(constructor = (*, value))]
+    Int {
+        value: i64,
+    },
+    #[pyo3(constructor = (*, value))]
+    Float {
+        value: f64,
+    },
+    #[pyo3(constructor = (*, value))]
+    String {
+        value: String,
+    },
+    #[pyo3(constructor = (*, items))]
+    List {
+        items: Items,
+    },
+    #[pyo3(constructor = (*, fields))]
+    Record {
+        fields: Fields,
+    },
+}
+
+impl From<core::Value> for Value {
+    fn from(value: core::Value) -> Self {
+        match value {
+            core::Value::Null => Self::Null {},
+            core::Value::Bool(value) => Self::Bool { value },
+            core::Value::Int(value) => Self::Int { value },
+            core::Value::Float(value) => Self::Float { value },
+            core::Value::String(value) => Self::String { value },
+            core::Value::List(items) => Self::List {
+                items: Items(items),
+            },
+            core::Value::Record(fields) => Self::Record {
+                fields: Fields(fields),
+            },
+        }
+    }
+}
+
+impl From<Value> for core::Value {
+    fn from(value: Value) -> Self {
+        match value {
+            Value::Null {} => Self::Null,
+            Value::Bool { value } => Self::Bool(value),
+            Value::Int { value } => Self::Int(value),
+            Value::Float { value } => Self::Float(value),
+            Value::String { value } => Self::String(value),
+            Value::List { items } => Self::List(items.0),
+            Value::Record { fields } => Self::Record(fields.0),
+        }
+    }
+}
 
 #[pymethods]
 impl Value {
     #[staticmethod]
     #[pyo3(signature = (*, value))]
     fn from_python(value: &Bound<'_, PyAny>) -> PyResult<Self> {
-        Ok(Self(host_value(value)?))
-    }
-    #[getter]
-    fn kind(&self) -> &'static str {
-        match self.0 {
-            core::Value::Null => "null",
-            core::Value::Bool(_) => "bool",
-            core::Value::Int(_) => "int",
-            core::Value::Float(_) => "float",
-            core::Value::String(_) => "string",
-            core::Value::List(_) => "list",
-            core::Value::Record(_) => "record",
-        }
-    }
-    #[getter]
-    fn scalar(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        Ok(match &self.0 {
-            core::Value::Null => py.None(),
-            core::Value::Bool(value) => value.into_pyobject(py)?.to_owned().into_any().unbind(),
-            core::Value::Int(value) => value.into_pyobject(py)?.into_any().unbind(),
-            core::Value::Float(value) => value.into_pyobject(py)?.into_any().unbind(),
-            core::Value::String(value) => value.into_pyobject(py)?.into_any().unbind(),
-            _ => return Err(PyTypeError::new_err("Structured values have no scalar")),
-        })
-    }
-    #[getter]
-    fn items(&self, py: Python<'_>) -> PyResult<Py<PyTuple>> {
-        let core::Value::List(items) = &self.0 else {
-            return Err(PyTypeError::new_err("Value is not a list"));
-        };
-        tuple(py, items.iter().cloned().map(Self).collect())
-    }
-    #[getter]
-    fn fields(&self, py: Python<'_>) -> PyResult<Py<PyTuple>> {
-        let core::Value::Record(fields) = &self.0 else {
-            return Err(PyTypeError::new_err("Value is not a record"));
-        };
-        tuple(
-            py,
-            fields
-                .iter()
-                .map(|(name, item)| (name.clone(), Self(item.clone())))
-                .collect(),
-        )
+        Ok(host_value(value)?.into())
     }
     #[pyo3(signature = (*, path))]
     fn get(&self, path: Vec<String>) -> Option<Self> {
-        self.0.get(&path).cloned().map(Self)
+        core::Value::from(self.clone())
+            .get(&path)
+            .cloned()
+            .map(Self::from)
     }
     #[pyo3(signature = (*, other))]
     fn equal(&self, other: &Bound<'_, PyAny>) -> PyResult<bool> {
-        Ok(self.0.equal(&host_value(other)?))
+        Ok(core::Value::from(self.clone()).equal(&host_value(other)?))
     }
 }
 
 #[pyclass(module = "kernel._native", frozen, from_py_object)]
 #[derive(Clone)]
-struct Record(Vec<(String, core::Value)>);
+struct Record(Fields);
 
 #[pymethods]
 impl Record {
     #[new]
     #[pyo3(signature = (*, fields))]
-    fn new(fields: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let mut active = HashSet::new();
-        let fields = sequence_snapshot(fields)?
-            .into_iter()
-            .map(|pair| {
-                let (name, item): (String, Bound<'_, PyAny>) = pair.extract()?;
-                Ok((name, item))
-            })
-            .collect::<PyResult<Vec<_>>>()?
-            .into_iter()
-            .map(|(name, item)| Ok((name, convert(&item, &mut active, 1)?)))
-            .collect::<PyResult<_>>()?;
-        Ok(Self(fields))
+    fn new(fields: Fields) -> Self {
+        Self(fields)
     }
     #[getter]
-    fn fields(&self, py: Python<'_>) -> PyResult<Py<PyTuple>> {
-        tuple(
-            py,
-            self.0
-                .iter()
-                .map(|(name, item)| (name.clone(), Value(item.clone())))
-                .collect(),
-        )
+    fn fields<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        (&self.0).into_pyobject(py)
     }
     fn __kernel_value__(&self) -> Value {
-        Value(core::Value::Record(self.0.clone()))
+        Value::Record {
+            fields: self.0.clone(),
+        }
     }
 }
 
 #[pyclass(module = "kernel._native", frozen, from_py_object)]
 #[derive(Clone)]
-struct Predicate(core::Predicate);
+enum Predicate {
+    #[pyo3(constructor = (*, path))]
+    Present { path: Path },
+    #[pyo3(constructor = (*, path, expected))]
+    Equals { path: Path, expected: Data },
+    #[pyo3(constructor = (*, path, allowed))]
+    Within { path: Path, allowed: Allowed },
+    #[pyo3(constructor = (*, path, item))]
+    Contains { path: Path, item: Data },
+    #[pyo3(constructor = (*, path, min_words, max_words))]
+    Words {
+        path: Path,
+        min_words: i64,
+        max_words: i64,
+    },
+    #[pyo3(constructor = (*, checks))]
+    All { checks: Checks },
+    #[pyo3(constructor = (*, checks))]
+    Any { checks: Checks },
+    #[pyo3(constructor = (*, check))]
+    Not { check: Operand },
+}
+
+impl From<core::Predicate> for Predicate {
+    fn from(predicate: core::Predicate) -> Self {
+        match predicate {
+            core::Predicate::Present { path } => Self::Present { path: Path(path) },
+            core::Predicate::Equals { path, expected } => Self::Equals {
+                path: Path(path),
+                expected: Data(expected),
+            },
+            core::Predicate::Within { path, allowed } => Self::Within {
+                path: Path(path),
+                allowed: Allowed(allowed),
+            },
+            core::Predicate::Contains { path, item } => Self::Contains {
+                path: Path(path),
+                item: Data(item),
+            },
+            core::Predicate::Words {
+                path,
+                min_words,
+                max_words,
+            } => Self::Words {
+                path: Path(path),
+                min_words,
+                max_words,
+            },
+            core::Predicate::All { checks } => Self::All {
+                checks: Checks(checks),
+            },
+            core::Predicate::Any { checks } => Self::Any {
+                checks: Checks(checks),
+            },
+            core::Predicate::Not { check } => Self::Not {
+                check: Operand(*check),
+            },
+        }
+    }
+}
+
+impl From<Predicate> for core::Predicate {
+    fn from(predicate: Predicate) -> Self {
+        match predicate {
+            Predicate::Present { path } => Self::Present { path: path.0 },
+            Predicate::Equals { path, expected } => Self::Equals {
+                path: path.0,
+                expected: expected.0,
+            },
+            Predicate::Within { path, allowed } => Self::Within {
+                path: path.0,
+                allowed: allowed.0,
+            },
+            Predicate::Contains { path, item } => Self::Contains {
+                path: path.0,
+                item: item.0,
+            },
+            Predicate::Words {
+                path,
+                min_words,
+                max_words,
+            } => Self::Words {
+                path: path.0,
+                min_words,
+                max_words,
+            },
+            Predicate::All { checks } => Self::All { checks: checks.0 },
+            Predicate::Any { checks } => Self::Any { checks: checks.0 },
+            Predicate::Not { check } => Self::Not {
+                check: Box::new(check.0),
+            },
+        }
+    }
+}
 
 #[pymethods]
 impl Predicate {
-    #[staticmethod]
-    #[pyo3(signature = (*, path))]
-    fn present(path: Vec<String>) -> Self {
-        Self(core::Predicate::Present { path })
-    }
-    #[staticmethod]
-    #[pyo3(signature = (*, path, expected))]
-    fn equals(path: Vec<String>, expected: &Bound<'_, PyAny>) -> PyResult<Self> {
-        Ok(Self(core::Predicate::Equals {
-            path,
-            expected: host_value(expected)?,
-        }))
-    }
-    #[staticmethod]
-    #[pyo3(signature = (*, path, allowed))]
-    fn within(path: Vec<String>, allowed: Vec<Bound<'_, PyAny>>) -> PyResult<Self> {
-        Ok(Self(core::Predicate::Within {
-            path,
-            allowed: allowed
-                .iter()
-                .map(host_value)
-                .collect::<PyResult<Vec<_>>>()?,
-        }))
-    }
-    #[staticmethod]
-    #[pyo3(signature = (*, path, item))]
-    fn contains(path: Vec<String>, item: &Bound<'_, PyAny>) -> PyResult<Self> {
-        Ok(Self(core::Predicate::Contains {
-            path,
-            item: host_value(item)?,
-        }))
-    }
-    #[staticmethod]
-    #[pyo3(signature = (*, path, min_words, max_words))]
-    fn words(path: Vec<String>, min_words: i64, max_words: i64) -> Self {
-        Self(core::Predicate::Words {
-            path,
-            min_words,
-            max_words,
-        })
-    }
-    #[staticmethod]
-    #[pyo3(signature = (*, checks))]
-    fn all(checks: Vec<(String, Self)>) -> PyResult<Self> {
-        for (_, check) in &checks {
-            check_predicate_depth(&check.0, 1)?;
-        }
-        Ok(Self(core::Predicate::All {
-            checks: checks
-                .into_iter()
-                .map(|(name, check)| (name, check.0))
-                .collect(),
-        }))
-    }
-    #[staticmethod]
-    #[pyo3(signature = (*, checks))]
-    fn any(checks: Vec<(String, Self)>) -> PyResult<Self> {
-        for (_, check) in &checks {
-            check_predicate_depth(&check.0, 1)?;
-        }
-        Ok(Self(core::Predicate::Any {
-            checks: checks
-                .into_iter()
-                .map(|(name, check)| (name, check.0))
-                .collect(),
-        }))
-    }
-    #[staticmethod]
-    #[pyo3(signature = (*, check))]
-    fn not_(check: Self) -> PyResult<Self> {
-        check_predicate_depth(&check.0, 1)?;
-        Ok(Self(core::Predicate::Not {
-            check: Box::new(check.0),
-        }))
-    }
     #[pyo3(signature = (*, observation))]
     fn holds(&self, observation: &Bound<'_, PyAny>) -> PyResult<bool> {
-        Ok(self.0.holds(&host_value(observation)?))
-    }
-    #[getter]
-    fn kind(&self) -> &'static str {
-        match self.0 {
-            core::Predicate::Present { .. } => "present",
-            core::Predicate::Equals { .. } => "equals",
-            core::Predicate::Within { .. } => "within",
-            core::Predicate::Contains { .. } => "contains",
-            core::Predicate::Words { .. } => "words",
-            core::Predicate::All { .. } => "all",
-            core::Predicate::Any { .. } => "any",
-            core::Predicate::Not { .. } => "not",
-        }
-    }
-    #[getter]
-    fn path(&self, py: Python<'_>) -> PyResult<Option<Py<PyTuple>>> {
-        self.0
-            .path()
-            .map(|path| tuple(py, path.to_vec()))
-            .transpose()
-    }
-    #[getter]
-    fn expected(&self) -> Option<Value> {
-        match &self.0 {
-            core::Predicate::Equals { expected, .. } => Some(Value(expected.clone())),
-            _ => None,
-        }
-    }
-    #[getter]
-    fn item(&self) -> Option<Value> {
-        match &self.0 {
-            core::Predicate::Contains { item, .. } => Some(Value(item.clone())),
-            _ => None,
-        }
-    }
-    #[getter]
-    fn allowed(&self, py: Python<'_>) -> PyResult<Option<Py<PyTuple>>> {
-        match &self.0 {
-            core::Predicate::Within { allowed, .. } => Ok(Some(tuple(
-                py,
-                allowed.iter().cloned().map(Value).collect(),
-            )?)),
-            _ => Ok(None),
-        }
-    }
-    #[getter]
-    fn min_words(&self) -> Option<i64> {
-        match self.0 {
-            core::Predicate::Words { min_words, .. } => Some(min_words),
-            _ => None,
-        }
-    }
-    #[getter]
-    fn max_words(&self) -> Option<i64> {
-        match self.0 {
-            core::Predicate::Words { max_words, .. } => Some(max_words),
-            _ => None,
-        }
-    }
-    #[getter]
-    fn checks(&self, py: Python<'_>) -> PyResult<Py<PyTuple>> {
-        match &self.0 {
-            core::Predicate::All { checks } | core::Predicate::Any { checks } => tuple(
-                py,
-                checks
-                    .iter()
-                    .map(|(name, check)| (name.clone(), Self(check.clone())))
-                    .collect(),
-            ),
-            _ => tuple::<Self>(py, vec![]),
-        }
-    }
-    #[getter]
-    fn check(&self) -> Option<Self> {
-        match &self.0 {
-            core::Predicate::Not { check } => Some(Self(*check.clone())),
-            _ => None,
-        }
+        Ok(core::Predicate::from(self.clone()).holds(&host_value(observation)?))
     }
 }
 
 #[pyclass(module = "kernel._native", frozen, from_py_object)]
 #[derive(Clone)]
-struct Verification(core::Verification);
+enum Verification {
+    Unchecked {},
+    Passed {},
+    Failed {},
+    InvalidSubmission {},
+    TimedOut {},
+    #[pyo3(constructor = (*, detail))]
+    HarnessError {
+        detail: String,
+    },
+}
+
+impl From<core::Verification> for Verification {
+    fn from(verification: core::Verification) -> Self {
+        match verification {
+            core::Verification::Unchecked => Self::Unchecked {},
+            core::Verification::Passed => Self::Passed {},
+            core::Verification::Failed => Self::Failed {},
+            core::Verification::InvalidSubmission => Self::InvalidSubmission {},
+            core::Verification::TimedOut => Self::TimedOut {},
+            core::Verification::HarnessError { detail } => Self::HarnessError { detail },
+        }
+    }
+}
+
+impl From<Verification> for core::Verification {
+    fn from(verification: Verification) -> Self {
+        match verification {
+            Verification::Unchecked {} => Self::Unchecked,
+            Verification::Passed {} => Self::Passed,
+            Verification::Failed {} => Self::Failed,
+            Verification::InvalidSubmission {} => Self::InvalidSubmission,
+            Verification::TimedOut {} => Self::TimedOut,
+            Verification::HarnessError { detail } => Self::HarnessError { detail },
+        }
+    }
+}
 
 #[pymethods]
 impl Verification {
-    #[staticmethod]
-    fn unchecked() -> Self {
-        Self(core::Verification::Unchecked)
-    }
-    #[staticmethod]
-    fn passed() -> Self {
-        Self(core::Verification::Passed)
-    }
-    #[staticmethod]
-    fn failed() -> Self {
-        Self(core::Verification::Failed)
-    }
-    #[staticmethod]
-    fn invalid_submission() -> Self {
-        Self(core::Verification::InvalidSubmission)
-    }
-    #[staticmethod]
-    fn timed_out() -> Self {
-        Self(core::Verification::TimedOut)
-    }
-    #[staticmethod]
-    #[pyo3(signature = (*, detail))]
-    fn harness_error(detail: String) -> Self {
-        Self(core::Verification::HarnessError { detail })
-    }
     #[getter]
     fn status(&self) -> &'static str {
-        self.0.status()
-    }
-    #[getter]
-    fn detail(&self) -> Option<String> {
-        match &self.0 {
-            core::Verification::HarnessError { detail } => Some(detail.clone()),
-            _ => None,
-        }
+        core::Verification::from(self.clone()).status()
     }
 }
 
@@ -454,7 +525,7 @@ impl Outcome {
         }
         Ok(Self(core::Outcome {
             changed_files,
-            verification: verification.0,
+            verification: verification.into(),
             response,
             facts,
         }))
@@ -465,11 +536,11 @@ impl Outcome {
     }
     #[getter]
     fn verification(&self) -> Verification {
-        Verification(self.0.verification.clone())
+        self.0.verification.clone().into()
     }
     #[getter]
     fn response(&self) -> Value {
-        Value(self.0.response.clone())
+        self.0.response.clone().into()
     }
     #[getter]
     fn facts(&self, py: Python<'_>) -> PyResult<Py<PyTuple>> {
@@ -478,71 +549,74 @@ impl Outcome {
             self.0
                 .facts
                 .iter()
-                .map(|(name, value)| (name.clone(), Value(value.clone())))
+                .map(|(name, value)| (name.clone(), Value::from(value.clone())))
                 .collect(),
         )
     }
     fn observation(&self) -> Value {
-        Value(self.0.observation())
+        self.0.observation().into()
     }
 }
 
 #[pyclass(module = "kernel._native", frozen, from_py_object)]
 #[derive(Clone)]
-struct Assessment(core::Assessment);
+enum Assessment {
+    #[pyo3(constructor = (*, predicate, observation))]
+    Check { predicate: Pred, observation: Data },
+    #[pyo3(constructor = (*, checks))]
+    All { checks: Assessments },
+}
+
+impl From<core::Assessment> for Assessment {
+    fn from(assessment: core::Assessment) -> Self {
+        match assessment {
+            core::Assessment::Check {
+                predicate,
+                observation,
+            } => Self::Check {
+                predicate: Pred(predicate),
+                observation: Data(observation),
+            },
+            core::Assessment::All { checks } => Self::All {
+                checks: Assessments(checks),
+            },
+        }
+    }
+}
+
+impl From<Assessment> for core::Assessment {
+    fn from(assessment: Assessment) -> Self {
+        match assessment {
+            Assessment::Check {
+                predicate,
+                observation,
+            } => Self::Check {
+                predicate: predicate.0,
+                observation: observation.0,
+            },
+            Assessment::All { checks } => Self::All { checks: checks.0 },
+        }
+    }
+}
 
 #[pymethods]
 impl Assessment {
     #[new]
     #[pyo3(signature = (*, predicate, observation))]
-    fn new(predicate: Predicate, observation: &Bound<'_, PyAny>) -> PyResult<Self> {
-        Ok(Self(core::Assessment::new(
-            predicate.0,
-            host_value(observation)?,
-        )))
+    fn new(py: Python<'_>, predicate: Pred, observation: Data) -> PyResult<Bound<'_, Self>> {
+        Self::from(core::Assessment::new(predicate.0, observation.0)).into_pyobject(py)
     }
     fn passed(&self) -> bool {
-        self.0.passed()
+        core::Assessment::from(self.clone()).passed()
     }
     fn observed(&self) -> Option<Value> {
-        self.0.observed().cloned().map(Value)
+        core::Assessment::from(self.clone())
+            .observed()
+            .cloned()
+            .map(Value::from)
     }
     fn scores(&self, py: Python<'_>) -> PyResult<Py<PyTuple>> {
-        tuple(py, self.0.scores())
-    }
-    #[getter]
-    fn kind(&self) -> &'static str {
-        match self.0 {
-            core::Assessment::Check { .. } => "check",
-            core::Assessment::All { .. } => "all",
-        }
-    }
-    #[getter]
-    fn predicate(&self) -> Option<Predicate> {
-        match &self.0 {
-            core::Assessment::Check { predicate, .. } => Some(Predicate(predicate.clone())),
-            _ => None,
-        }
-    }
-    #[getter]
-    fn observation(&self) -> Option<Value> {
-        match &self.0 {
-            core::Assessment::Check { observation, .. } => Some(Value(observation.clone())),
-            _ => None,
-        }
-    }
-    #[getter]
-    fn checks(&self, py: Python<'_>) -> PyResult<Py<PyTuple>> {
-        match &self.0 {
-            core::Assessment::All { checks } => tuple(
-                py,
-                checks
-                    .iter()
-                    .map(|(name, check)| (name.clone(), Self(check.clone())))
-                    .collect(),
-            ),
-            _ => tuple::<Self>(py, vec![]),
-        }
+        tuple(py, core::Assessment::from(self.clone()).scores())
     }
 }
 
@@ -688,7 +762,7 @@ impl Rubric {
             self.0
                 .expected
                 .iter()
-                .map(|(name, value)| (name.clone(), Value(value.clone())))
+                .map(|(name, value)| (name.clone(), Value::from(value.clone())))
                 .collect(),
         )
     }
@@ -700,60 +774,49 @@ impl Rubric {
 
 #[pyclass(module = "kernel._native", frozen, from_py_object)]
 #[derive(Clone)]
-struct Criterion(core::Criterion);
+enum Criterion {
+    #[pyo3(constructor = (*, verifier))]
+    Code { verifier: Verifier },
+    #[pyo3(constructor = (*, rubric))]
+    Answer { rubric: Rubric },
+    #[pyo3(constructor = (*, predicate))]
+    State { predicate: Pred },
+}
+
+impl From<core::Criterion> for Criterion {
+    fn from(criterion: core::Criterion) -> Self {
+        match criterion {
+            core::Criterion::Code { verifier } => Self::Code {
+                verifier: Verifier(verifier),
+            },
+            core::Criterion::Answer { rubric } => Self::Answer {
+                rubric: Rubric(rubric),
+            },
+            core::Criterion::State { predicate } => Self::State {
+                predicate: Pred(predicate),
+            },
+        }
+    }
+}
+
+impl From<Criterion> for core::Criterion {
+    fn from(criterion: Criterion) -> Self {
+        match criterion {
+            Criterion::Code { verifier } => Self::Code {
+                verifier: verifier.0,
+            },
+            Criterion::Answer { rubric } => Self::Answer { rubric: rubric.0 },
+            Criterion::State { predicate } => Self::State {
+                predicate: predicate.0,
+            },
+        }
+    }
+}
 
 #[pymethods]
 impl Criterion {
-    #[staticmethod]
-    #[pyo3(signature = (*, verifier))]
-    fn code(verifier: Verifier) -> Self {
-        Self(core::Criterion::Code {
-            verifier: verifier.0,
-        })
-    }
-    #[staticmethod]
-    #[pyo3(signature = (*, rubric))]
-    fn answer(rubric: Rubric) -> Self {
-        Self(core::Criterion::Answer { rubric: rubric.0 })
-    }
-    #[staticmethod]
-    #[pyo3(signature = (*, predicate))]
-    fn state(predicate: Predicate) -> Self {
-        Self(core::Criterion::State {
-            predicate: predicate.0,
-        })
-    }
     fn condition(&self) -> Predicate {
-        Predicate(self.0.condition())
-    }
-    #[getter]
-    fn kind(&self) -> &'static str {
-        match self.0 {
-            core::Criterion::Code { .. } => "code",
-            core::Criterion::Answer { .. } => "answer",
-            core::Criterion::State { .. } => "state",
-        }
-    }
-    #[getter]
-    fn verifier(&self) -> Option<Verifier> {
-        match &self.0 {
-            core::Criterion::Code { verifier } => Some(Verifier(verifier.clone())),
-            _ => None,
-        }
-    }
-    #[getter]
-    fn rubric(&self) -> Option<Rubric> {
-        match &self.0 {
-            core::Criterion::Answer { rubric } => Some(Rubric(rubric.clone())),
-            _ => None,
-        }
-    }
-    #[getter]
-    fn predicate(&self) -> Option<Predicate> {
-        match &self.0 {
-            core::Criterion::State { predicate } => Some(Predicate(predicate.clone())),
-            _ => None,
-        }
+        core::Criterion::from(self.clone()).condition().into()
     }
 }
 
@@ -777,7 +840,7 @@ impl Reference {
     }
     #[getter]
     fn completion(&self) -> Value {
-        Value(self.0.completion.clone())
+        self.0.completion.clone().into()
     }
 }
 
@@ -859,14 +922,15 @@ impl Task {
         reference: Reference,
         py: Python<'_>,
     ) -> PyResult<Self> {
-        if let core::Criterion::State { predicate } = &criterion.0 {
+        let criterion = core::Criterion::from(criterion);
+        if let core::Criterion::State { predicate } = &criterion {
             check_predicate_depth(predicate, 1)?;
         }
         core::Task::new(
             id,
             fixture.into_iter().map(|file| file.0).collect(),
             instruction.0,
-            criterion.0,
+            criterion,
             allowed_files,
             reference.0,
         )
@@ -890,7 +954,7 @@ impl Task {
     }
     #[getter]
     fn criterion(&self) -> Criterion {
-        Criterion(self.0.criterion().clone())
+        self.0.criterion().clone().into()
     }
     #[getter]
     fn allowed_files(&self, py: Python<'_>) -> PyResult<Py<PyTuple>> {
@@ -910,7 +974,7 @@ impl Task {
     fn assess(&self, py: Python<'_>, outcome: PyRef<'_, Outcome>) -> PyResult<Assessment> {
         self.0
             .assess(&outcome.0)
-            .map(Assessment)
+            .map(Assessment::from)
             .map_err(|failure| grading_error(py, failure))
     }
     #[pyo3(signature = (*, outcome))]
@@ -932,7 +996,7 @@ impl Task {
                 .iter()
                 .map(|file| file.path.clone())
                 .collect(),
-            verification: verification.0,
+            verification: verification.into(),
             response: reference.completion.clone(),
             facts: vec![],
         };

@@ -118,7 +118,7 @@ def verify(wheel, python, uv, offline, expected_source_hash=None):
         )
         if (
             invalid.returncode != 1
-            or "Found 4 errors" not in invalid.stdout
+            or "Found 5 errors" not in invalid.stdout
             or any(
                 code not in invalid.stdout
                 for code in ("[call-arg]", "[misc]", "[attr-defined]")
