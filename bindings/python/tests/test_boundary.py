@@ -764,3 +764,171 @@ def test_assessment_and_criterion_variants_narrow():
             case k.Criterion.State(predicate):
                 assert isinstance(predicate, k.Predicate.Equals)
         assert isinstance(declared.condition(), k.Predicate)
+
+
+def test_native_equality_and_hashing_follow_core_semantics():
+    record = k.Value.from_python(value={"a": 1, "b": [1, 2]})
+    reordered = k.Value.Record(fields=[("b", [1, 2]), ("a", 1), ("a", 9)])
+    assert record == reordered
+    assert hash(record) == hash(reordered)
+    assert record != k.Value.from_python(value={"a": 1})
+    assert k.Value.Int(value=1) != k.Value.Float(value=1.0)
+    assert hash(k.Value.Float(value=0.0)) == hash(k.Value.Float(value=-0.0))
+    assert record != {"a": 1, "b": [1, 2]}
+    assert k.Record(fields=[("a", 1), ("a", 2)]) == k.Record(fields=[("a", 1)])
+    task = state_task()
+    rebuilt = k.Task(
+        id=task.id,
+        fixture=task.fixture,
+        instruction=task.instruction,
+        criterion=task.criterion,
+        allowed_files=task.allowed_files,
+        reference=task.reference,
+    )
+    assert task == rebuilt
+    assert len({task, rebuilt, state_task()}) == 1
+    assert task.project() == rebuilt.project()
+    assert task != task.project()
+    assert len({k.Predicate.Present(path=["a"]), k.Predicate.Present(path=["a"])}) == 1
+    assert k.Verification.HarnessError(detail="x") != k.Verification.HarnessError(
+        detail="y"
+    )
+    assert k.Criterion.State(
+        predicate=k.Predicate.Present(path=["a"])
+    ) != k.Criterion.State(predicate=k.Predicate.Present(path=["b"]))
+
+
+def test_to_python_projects_plain_json_with_variant_kinds():
+    import json
+
+    assert k.Value.from_python(value={"a": [1, 2.5, None, True, "x"]}).to_python() == {
+        "a": [1, 2.5, None, True, "x"]
+    }
+    assert k.Value.Record(fields=[("a", 1), ("a", 2)]).to_python() == {"a": 1}
+    assert k.Record(fields=[("a", 1), ("a", 2)]).to_python() == {"a": 1}
+    check = k.Predicate.All(
+        checks=[
+            ("not", k.Predicate.Not(check=k.Predicate.Present(path=["a"]))),
+            ("text", k.Predicate.Words(path=["r"], min_words=1, max_words=2)),
+            ("within", k.Predicate.Within(path=["w"], allowed=[1, "x"])),
+            ("contains", k.Predicate.Contains(path=["c"], item={"id": 1})),
+            ("any", k.Predicate.Any(checks=[])),
+        ]
+    )
+    assert check.to_python() == {
+        "kind": "all",
+        "checks": [
+            ["not", {"kind": "not", "check": {"kind": "present", "path": ["a"]}}],
+            ["text", {"kind": "words", "path": ["r"], "min_words": 1, "max_words": 2}],
+            ["within", {"kind": "within", "path": ["w"], "allowed": [1, "x"]}],
+            ["contains", {"kind": "contains", "path": ["c"], "item": {"id": 1}}],
+            ["any", {"kind": "any", "checks": []}],
+        ],
+    }
+    assert k.Verification.Passed().to_python() == {"kind": "passed"}
+    assert k.Verification.HarnessError(detail="offline").to_python() == {
+        "kind": "harness_error",
+        "detail": "offline",
+    }
+    task = state_task()
+    assert task.to_python() == {
+        "id": "state",
+        "fixture": [],
+        "instruction": {"prompt": "observe"},
+        "criterion": {
+            "kind": "state",
+            "predicate": {
+                "kind": "equals",
+                "path": ["response", "answer"],
+                "expected": 42,
+            },
+        },
+        "allowed_files": [],
+        "reference": {"edits": [], "completion": {"answer": 42}},
+    }
+    verifier = k.Verifier(
+        inputs=["a.txt"],
+        files=[k.SourceFile(path="verify.py", contents="secret")],
+        tools=[k.SourceFile(path="tool", contents="public")],
+        command=["python3", "verify.py"],
+        stdin="",
+        timeout_seconds=3,
+    )
+    assert k.Criterion.Code(verifier=verifier).to_python() == {
+        "kind": "code",
+        "verifier": {
+            "inputs": ["a.txt"],
+            "files": [{"path": "verify.py", "contents": "secret"}],
+            "tools": [{"path": "tool", "contents": "public"}],
+            "command": ["python3", "verify.py"],
+            "stdin": "",
+            "timeout_seconds": 3,
+        },
+    }
+    rubric = k.Rubric(
+        expected=[("choice", "B")],
+        text_rule=k.TextRule(field="reason", min_words=1, max_words=5),
+    )
+    assert k.Criterion.Answer(rubric=rubric).to_python() == {
+        "kind": "answer",
+        "rubric": {
+            "expected": [["choice", "B"]],
+            "text_rule": {"field": "reason", "min_words": 1, "max_words": 5},
+        },
+    }
+    assert task.project().to_python() == {
+        "case_id": "state",
+        "prompt": "observe",
+        "files": [],
+    }
+    outcome = k.Outcome(
+        changed_files=["a.txt"],
+        verification=k.Verification.Unchecked(),
+        response={"answer": 42},
+        facts=[("trace", [])],
+    )
+    assert outcome.to_python() == {
+        "changed_files": ["a.txt"],
+        "verification": {"kind": "unchecked"},
+        "response": {"answer": 42},
+        "facts": [["trace", []]],
+    }
+    assessment = task.assess(outcome=outcome).to_python()
+    assert assessment["kind"] == "all"
+    assert [name for name, _ in assessment["checks"]] == ["correctness", "scope"]
+    assert assessment["checks"][1][1]["kind"] == "check"
+    with pytest.raises(k.ValidationError) as failure:
+        k.Task(
+            id="",
+            fixture=[],
+            instruction=k.Instruction(prompt=""),
+            criterion=k.Criterion.State(predicate=k.Predicate.Present(path=["a"])),
+            allowed_files=[],
+            reference=k.Reference(edits=[], completion=None),
+        )
+    issue = failure.value.issues[0]
+    assert issue.to_python() == {"field": issue.field, "message": issue.message}
+    json.dumps(task.to_python())
+
+
+def test_representable_reports_conversion_limits_without_raising():
+    deep = 0
+    for _ in range(k.NESTING_LIMIT):
+        deep = [deep]
+    cyclic = []
+    cyclic.append(cyclic)
+    assert k.NESTING_LIMIT == 256
+    assert k.Value.representable(value={"a": [1, 2.5, None, True, "x"]})
+    assert k.Value.representable(value=deep)
+    assert not k.Value.representable(value=[deep])
+    assert not k.Value.representable(value=2**63)
+    assert not k.Value.representable(value={1: "a"})
+    assert not k.Value.representable(value=cyclic)
+    assert not k.Value.representable(value=object())
+
+    class Failing:
+        def __kernel_value__(self):
+            raise RuntimeError("callback failed")
+
+    with pytest.raises(RuntimeError, match="callback failed"):
+        k.Value.representable(value=Failing())

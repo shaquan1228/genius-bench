@@ -1,9 +1,9 @@
-from kernel import Instruction, Outcome, Task, Value
+from kernel import Instruction, Outcome, Task, Value, Verification
 
 
 def invalid(task: Task, outcome: Outcome) -> None:
     task.assess(outcome)
     task.id = "changed"
-    Value.from_python(value=1).missing
+    Value.Int(value=1).missing
     Instruction("positional")
-    outcome.verification.detail
+    Verification.Passed().detail

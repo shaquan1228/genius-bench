@@ -9,6 +9,7 @@ from ._native import (
     GradingError,
     Instruction,
     Issue,
+    NESTING_LIMIT,
     Outcome,
     Predicate,
     Record,
@@ -28,15 +29,20 @@ from ._native import (
 
 __all__ = [
     "Assessment",
+    "AssessmentVariant",
     "Case",
     "Criterion",
+    "CriterionVariant",
     "SourceFile",
     "GradingError",
     "Instruction",
     "Issue",
     "KernelValue",
+    "NESTING_LIMIT",
     "Outcome",
+    "PlainValue",
     "Predicate",
+    "PredicateVariant",
     "Record",
     "Reference",
     "REQUIRED_SCORES",
@@ -45,13 +51,50 @@ __all__ = [
     "TextRule",
     "ValidationError",
     "Value",
+    "ValueVariant",
     "Verification",
+    "VerificationVariant",
     "Verifier",
     "from_dataclass",
     "from_pydantic",
     "source_hash",
     "version",
 ]
+
+
+PlainValue = (
+    None | bool | int | float | str | list["PlainValue"] | dict[str, "PlainValue"]
+)
+
+ValueVariant = (
+    Value.Null
+    | Value.Bool
+    | Value.Int
+    | Value.Float
+    | Value.String
+    | Value.List
+    | Value.Record
+)
+PredicateVariant = (
+    Predicate.Present
+    | Predicate.Equals
+    | Predicate.Within
+    | Predicate.Contains
+    | Predicate.Words
+    | Predicate.All
+    | Predicate.Any
+    | Predicate.Not
+)
+VerificationVariant = (
+    Verification.Unchecked
+    | Verification.Passed
+    | Verification.Failed
+    | Verification.InvalidSubmission
+    | Verification.TimedOut
+    | Verification.HarnessError
+)
+AssessmentVariant = Assessment.Check | Assessment.All
+CriterionVariant = Criterion.Code | Criterion.Answer | Criterion.State
 
 
 class KernelValue(Protocol):
