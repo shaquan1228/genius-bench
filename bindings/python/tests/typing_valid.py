@@ -1,22 +1,29 @@
 from dataclasses import dataclass
-from typing import Literal, assert_type
+from typing import Literal, assert_never, assert_type
 
 from kernel import (
     Assessment,
+    AssessmentVariant,
     Case,
     Criterion,
+    CriterionVariant,
     SourceFile,
     Instruction,
     KernelValue,
+    NESTING_LIMIT,
     Outcome,
+    PlainValue,
     Predicate,
+    PredicateVariant,
     Record,
     Reference,
     Rubric,
     Task,
     TextRule,
     Value,
+    ValueVariant,
     Verification,
+    VerificationVariant,
     from_dataclass,
     from_pydantic,
     REQUIRED_SCORES,
@@ -57,7 +64,7 @@ outcome = Outcome(
     response=from_dataclass(value=Answer(answer=42)),
     facts=[],
 )
-assessment: Assessment = task.assess(outcome=outcome)
+assessment: AssessmentVariant = task.assess(outcome=outcome)
 scores: tuple[tuple[str, bool], ...] = task.grade(outcome=outcome)
 reference_scores: tuple[tuple[str, bool], ...] = task.grade_reference(
     verification=Verification.Unchecked()
@@ -85,7 +92,7 @@ native_equal: bool = value.equal(other={"answer": 42})
 pydantic_value: Value = from_pydantic(value=object())
 
 
-def describe_value(data: Value) -> object:
+def describe_value(data: ValueVariant) -> object:
     match data:
         case Value.Null():
             return None
@@ -99,33 +106,36 @@ def describe_value(data: Value) -> object:
             return assert_type(text, str)
         case Value.List(items):
             return [
-                describe_value(item) for item in assert_type(items, tuple[Value, ...])
+                describe_value(item)
+                for item in assert_type(items, tuple[ValueVariant, ...])
             ]
         case Value.Record(fields):
             return {name: describe_value(item) for name, item in fields}
-    return data
+        case _:
+            assert_never(data)
 
 
-def describe_predicate(check: Predicate) -> object:
+def describe_predicate(check: PredicateVariant) -> object:
     match check:
         case Predicate.Present(path):
             return assert_type(path, tuple[str, ...])
         case Predicate.Equals(path, expected):
-            return assert_type(expected, Value)
+            return assert_type(expected, ValueVariant)
         case Predicate.Within(path, allowed):
-            return assert_type(allowed, tuple[Value, ...])
+            return assert_type(allowed, tuple[ValueVariant, ...])
         case Predicate.Contains(path, item):
-            return assert_type(item, Value)
+            return assert_type(item, ValueVariant)
         case Predicate.Words(path, low, high):
             return assert_type(low, int) + assert_type(high, int)
         case Predicate.All(checks) | Predicate.Any(checks):
-            return assert_type(checks, tuple[tuple[str, Predicate], ...])
+            return assert_type(checks, tuple[tuple[str, PredicateVariant], ...])
         case Predicate.Not(inner):
             return describe_predicate(inner)
-    return check
+        case _:
+            assert_never(check)
 
 
-def describe_verification(verification: Verification) -> str:
+def describe_verification(verification: VerificationVariant) -> str:
     if isinstance(verification, Verification.HarnessError):
         assert_type(verification.status, Literal["harness_error"])
         return assert_type(verification.detail, str)
@@ -136,26 +146,29 @@ def describe_verification(verification: Verification) -> str:
             return verification.status
         case Verification.TimedOut():
             return assert_type(verification.status, Literal["timed_out"])
-    return verification.status
+        case _:
+            assert_never(verification)
 
 
-def describe_assessment(result: Assessment) -> object:
-    if isinstance(result, Assessment.All):
-        return [
-            describe_assessment(check)
-            for _, check in assert_type(
-                result.checks, tuple[tuple[str, Assessment], ...]
+def describe_assessment(result: AssessmentVariant) -> object:
+    match result:
+        case Assessment.All(checks):
+            return [
+                describe_assessment(check)
+                for _, check in assert_type(
+                    checks, tuple[tuple[str, AssessmentVariant], ...]
+                )
+            ]
+        case Assessment.Check(predicate, observation):
+            return (
+                assert_type(predicate, PredicateVariant),
+                assert_type(observation, ValueVariant),
             )
-        ]
-    if isinstance(result, Assessment.Check):
-        return (
-            assert_type(result.predicate, Predicate),
-            assert_type(result.observation, Value),
-        )
-    return result.passed()
+        case _:
+            assert_never(result)
 
 
-def describe_criterion(declared: Criterion) -> object:
+def describe_criterion(declared: CriterionVariant) -> object:
     match declared:
         case Criterion.Code(verifier):
             return verifier.command
@@ -163,7 +176,8 @@ def describe_criterion(declared: Criterion) -> object:
             return rubric.expected
         case Criterion.State(predicate):
             return describe_predicate(predicate)
-    return declared.condition()
+        case _:
+            assert_never(declared)
 
 
 harness: Verification.HarnessError = Verification.HarnessError(detail="worker missing")
@@ -181,3 +195,22 @@ described = (
     describe_assessment(Assessment.All(checks=[("words", checked)])),
     Criterion.State(predicate=present),
 )
+plain_task: dict[str, PlainValue] = task.to_python()
+plain_value: PlainValue = value.to_python()
+plain_parts: tuple[dict[str, PlainValue], ...] = (
+    record.to_python(),
+    present.to_python(),
+    outcome.verification.to_python(),
+    outcome.to_python(),
+    assessment.to_python(),
+    task.criterion.to_python(),
+    rubric.to_python(),
+    text_rule.to_python(),
+    files[0].to_python(),
+    task.instruction.to_python(),
+    task.reference.to_python(),
+    case.to_python(),
+)
+representable: bool = Value.representable(value={"answer": 2**63})
+nesting: int = NESTING_LIMIT
+same: bool = task == task and hash(present) == hash(present)

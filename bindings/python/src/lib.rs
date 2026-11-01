@@ -1,9 +1,12 @@
 use pyo3::IntoPyObjectExt;
-use pyo3::exceptions::{PyAttributeError, PyRuntimeError, PyTypeError, PyValueError};
+use pyo3::exceptions::{
+    PyAttributeError, PyOverflowError, PyRuntimeError, PyTypeError, PyValueError,
+};
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyList, PyString, PyTuple};
 use semantic_core as core;
 use std::collections::HashSet;
+use std::hash::{Hash, Hasher};
 
 pyo3::create_exception!(kernel._native, ValidationError, PyValueError);
 pyo3::create_exception!(kernel._native, GradingError, PyRuntimeError);
@@ -167,6 +170,268 @@ fn values<'py>(py: Python<'py>, items: &[core::Value]) -> PyResult<Bound<'py, Py
     Ok(PyTuple::new(py, items.iter().cloned().map(Value::from))?.into_any())
 }
 
+trait Plain {
+    fn plain(&self) -> core::Value;
+}
+
+fn record<const N: usize>(fields: [(&str, core::Value); N]) -> core::Value {
+    core::Value::Record(
+        fields
+            .into_iter()
+            .map(|(name, value)| (name.to_string(), value))
+            .collect(),
+    )
+}
+
+fn variant<const N: usize>(kind: &str, fields: [(&str, core::Value); N]) -> core::Value {
+    let mut tagged = vec![("kind".to_string(), core::Value::String(kind.into()))];
+    tagged.extend(fields.map(|(name, value)| (name.to_string(), value)));
+    core::Value::Record(tagged)
+}
+
+fn list<T: Plain>(items: &[T]) -> core::Value {
+    core::Value::List(items.iter().map(Plain::plain).collect())
+}
+
+fn pairs<T: Plain>(items: &[(String, T)]) -> core::Value {
+    core::Value::List(
+        items
+            .iter()
+            .map(|(name, item)| core::Value::List(vec![name.plain(), item.plain()]))
+            .collect(),
+    )
+}
+
+impl Plain for core::Value {
+    fn plain(&self) -> core::Value {
+        self.clone()
+    }
+}
+
+impl Plain for String {
+    fn plain(&self) -> core::Value {
+        core::Value::String(self.clone())
+    }
+}
+
+impl<T: Plain> Plain for Option<T> {
+    fn plain(&self) -> core::Value {
+        self.as_ref().map_or(core::Value::Null, Plain::plain)
+    }
+}
+
+impl Plain for core::Predicate {
+    fn plain(&self) -> core::Value {
+        match self {
+            Self::Present { path } => variant("present", [("path", list(path))]),
+            Self::Equals { path, expected } => variant(
+                "equals",
+                [("path", list(path)), ("expected", expected.clone())],
+            ),
+            Self::Within { path, allowed } => {
+                variant("within", [("path", list(path)), ("allowed", list(allowed))])
+            }
+            Self::Contains { path, item } => {
+                variant("contains", [("path", list(path)), ("item", item.clone())])
+            }
+            Self::Words {
+                path,
+                min_words,
+                max_words,
+            } => variant(
+                "words",
+                [
+                    ("path", list(path)),
+                    ("min_words", core::Value::Int(*min_words)),
+                    ("max_words", core::Value::Int(*max_words)),
+                ],
+            ),
+            Self::All { checks } => variant("all", [("checks", pairs(checks))]),
+            Self::Any { checks } => variant("any", [("checks", pairs(checks))]),
+            Self::Not { check } => variant("not", [("check", check.plain())]),
+        }
+    }
+}
+
+impl Plain for core::Verification {
+    fn plain(&self) -> core::Value {
+        match self {
+            Self::HarnessError { detail } => variant(self.status(), [("detail", detail.plain())]),
+            _ => variant(self.status(), []),
+        }
+    }
+}
+
+impl Plain for core::Outcome {
+    fn plain(&self) -> core::Value {
+        record([
+            ("changed_files", list(&self.changed_files)),
+            ("verification", self.verification.plain()),
+            ("response", self.response.clone()),
+            ("facts", pairs(&self.facts)),
+        ])
+    }
+}
+
+impl Plain for core::Assessment {
+    fn plain(&self) -> core::Value {
+        match self {
+            Self::Check {
+                predicate,
+                observation,
+            } => variant(
+                "check",
+                [
+                    ("predicate", predicate.plain()),
+                    ("observation", observation.clone()),
+                ],
+            ),
+            Self::All { checks } => variant("all", [("checks", pairs(checks))]),
+        }
+    }
+}
+
+impl Plain for core::File {
+    fn plain(&self) -> core::Value {
+        record([
+            ("path", self.path.plain()),
+            ("contents", self.contents.plain()),
+        ])
+    }
+}
+
+impl Plain for core::Instruction {
+    fn plain(&self) -> core::Value {
+        record([("prompt", self.prompt.plain())])
+    }
+}
+
+impl Plain for core::Verifier {
+    fn plain(&self) -> core::Value {
+        record([
+            ("inputs", list(&self.inputs)),
+            ("files", list(&self.files)),
+            ("tools", list(&self.tools)),
+            ("command", list(&self.command)),
+            ("stdin", self.stdin.plain()),
+            ("timeout_seconds", core::Value::Int(self.timeout_seconds)),
+        ])
+    }
+}
+
+impl Plain for core::TextRule {
+    fn plain(&self) -> core::Value {
+        record([
+            ("field", self.field.plain()),
+            ("min_words", core::Value::Int(self.min_words)),
+            ("max_words", core::Value::Int(self.max_words)),
+        ])
+    }
+}
+
+impl Plain for core::Rubric {
+    fn plain(&self) -> core::Value {
+        record([
+            ("expected", pairs(&self.expected)),
+            ("text_rule", self.text_rule.plain()),
+        ])
+    }
+}
+
+impl Plain for core::Criterion {
+    fn plain(&self) -> core::Value {
+        match self {
+            Self::Code { verifier } => variant("code", [("verifier", verifier.plain())]),
+            Self::Answer { rubric } => variant("answer", [("rubric", rubric.plain())]),
+            Self::State { predicate } => variant("state", [("predicate", predicate.plain())]),
+        }
+    }
+}
+
+impl Plain for core::Reference {
+    fn plain(&self) -> core::Value {
+        record([
+            ("edits", list(&self.edits)),
+            ("completion", self.completion.clone()),
+        ])
+    }
+}
+
+impl Plain for core::Case {
+    fn plain(&self) -> core::Value {
+        record([
+            ("case_id", self.case_id.plain()),
+            ("prompt", self.prompt.plain()),
+            ("files", list(&self.files)),
+        ])
+    }
+}
+
+impl Plain for core::Issue {
+    fn plain(&self) -> core::Value {
+        record([
+            ("field", self.field.plain()),
+            ("message", self.message.plain()),
+        ])
+    }
+}
+
+impl Plain for core::Task {
+    fn plain(&self) -> core::Value {
+        record([
+            ("id", self.id().to_string().plain()),
+            ("fixture", list(self.fixture())),
+            ("instruction", self.instruction().plain()),
+            ("criterion", self.criterion().plain()),
+            ("allowed_files", list(self.allowed_files())),
+            ("reference", self.reference().plain()),
+        ])
+    }
+}
+
+fn python<'py>(py: Python<'py>, value: &core::Value) -> PyResult<Bound<'py, PyAny>> {
+    match value {
+        core::Value::Null => Ok(py.None().into_bound(py)),
+        core::Value::Bool(value) => value.into_bound_py_any(py),
+        core::Value::Int(value) => value.into_bound_py_any(py),
+        core::Value::Float(value) => value.into_bound_py_any(py),
+        core::Value::String(value) => value.into_bound_py_any(py),
+        core::Value::List(items) => Ok(PyList::new(
+            py,
+            items
+                .iter()
+                .map(|item| python(py, item))
+                .collect::<PyResult<Vec<_>>>()?,
+        )?
+        .into_any()),
+        core::Value::Record(fields) => {
+            let mapping = PyDict::new(py);
+            for (name, item) in fields {
+                if !mapping.contains(name)? {
+                    mapping.set_item(name, python(py, item)?)?;
+                }
+            }
+            Ok(mapping.into_any())
+        }
+    }
+}
+
+macro_rules! identity {
+    ($type:ty, $core:ty) => {
+        impl PartialEq for $type {
+            fn eq(&self, other: &Self) -> bool {
+                <$core>::from(self.clone()) == <$core>::from(other.clone())
+            }
+        }
+
+        impl Hash for $type {
+            fn hash<H: Hasher>(&self, state: &mut H) {
+                <$core>::from(self.clone()).hash(state)
+            }
+        }
+    };
+}
+
 /* Variant fields hold core data, accept native Python input, and read back as tuples
 of typed variants. PyO3 builds each variant's constructor and getters from these types.
 https://pyo3.rs/v0.29.3/class#complex-enums */
@@ -246,7 +511,7 @@ field!(
     |checks, py| named(py, checks, Assessment::from)
 );
 
-#[pyclass(module = "kernel._native", frozen, from_py_object)]
+#[pyclass(module = "kernel._native", frozen, eq, hash, from_py_object)]
 #[derive(Clone)]
 enum Value {
     Null {},
@@ -275,6 +540,8 @@ enum Value {
         fields: Fields,
     },
 }
+
+identity!(Value, core::Value);
 
 impl From<core::Value> for Value {
     fn from(value: core::Value) -> Self {
@@ -326,11 +593,38 @@ impl Value {
     fn equal(&self, other: &Bound<'_, PyAny>) -> PyResult<bool> {
         Ok(core::Value::from(self.clone()).equal(&host_value(other)?))
     }
+    #[staticmethod]
+    #[pyo3(signature = (*, value))]
+    fn representable(value: &Bound<'_, PyAny>) -> PyResult<bool> {
+        let py = value.py();
+        match host_value(value) {
+            Ok(_) => Ok(true),
+            Err(error)
+                if error.is_instance_of::<PyValueError>(py)
+                    || error.is_instance_of::<PyTypeError>(py)
+                    || error.is_instance_of::<PyOverflowError>(py) =>
+            {
+                Ok(false)
+            }
+            Err(error) => Err(error),
+        }
+    }
+    fn to_python<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        python(py, &core::Value::from(self.clone()))
+    }
 }
 
-#[pyclass(module = "kernel._native", frozen, from_py_object)]
+#[pyclass(module = "kernel._native", frozen, eq, hash, from_py_object)]
 #[derive(Clone)]
 struct Record(Fields);
+
+impl From<Record> for core::Value {
+    fn from(record: Record) -> Self {
+        Self::Record(record.0.0)
+    }
+}
+
+identity!(Record, core::Value);
 
 #[pymethods]
 impl Record {
@@ -348,9 +642,12 @@ impl Record {
             fields: self.0.clone(),
         }
     }
+    fn to_python<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        python(py, &core::Value::from(self.clone()))
+    }
 }
 
-#[pyclass(module = "kernel._native", frozen, from_py_object)]
+#[pyclass(module = "kernel._native", frozen, eq, hash, from_py_object)]
 #[derive(Clone)]
 enum Predicate {
     #[pyo3(constructor = (*, path))]
@@ -374,6 +671,8 @@ enum Predicate {
     #[pyo3(constructor = (*, check))]
     Not { check: Operand },
 }
+
+identity!(Predicate, core::Predicate);
 
 impl From<core::Predicate> for Predicate {
     fn from(predicate: core::Predicate) -> Self {
@@ -453,9 +752,12 @@ impl Predicate {
     fn holds(&self, observation: &Bound<'_, PyAny>) -> PyResult<bool> {
         Ok(core::Predicate::from(self.clone()).holds(&host_value(observation)?))
     }
+    fn to_python<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        python(py, &core::Predicate::from(self.clone()).plain())
+    }
 }
 
-#[pyclass(module = "kernel._native", frozen, from_py_object)]
+#[pyclass(module = "kernel._native", frozen, eq, hash, from_py_object)]
 #[derive(Clone)]
 enum Verification {
     Unchecked {},
@@ -468,6 +770,8 @@ enum Verification {
         detail: String,
     },
 }
+
+identity!(Verification, core::Verification);
 
 impl From<core::Verification> for Verification {
     fn from(verification: core::Verification) -> Self {
@@ -501,10 +805,13 @@ impl Verification {
     fn status(&self) -> &'static str {
         core::Verification::from(self.clone()).status()
     }
+    fn to_python<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        python(py, &core::Verification::from(self.clone()).plain())
+    }
 }
 
-#[pyclass(module = "kernel._native", frozen, from_py_object)]
-#[derive(Clone)]
+#[pyclass(module = "kernel._native", frozen, eq, hash, from_py_object)]
+#[derive(Clone, PartialEq, Hash)]
 struct Outcome(core::Outcome);
 
 #[pymethods]
@@ -556,9 +863,12 @@ impl Outcome {
     fn observation(&self) -> Value {
         self.0.observation().into()
     }
+    fn to_python<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        python(py, &self.0.plain())
+    }
 }
 
-#[pyclass(module = "kernel._native", frozen, from_py_object)]
+#[pyclass(module = "kernel._native", frozen, eq, hash, from_py_object)]
 #[derive(Clone)]
 enum Assessment {
     #[pyo3(constructor = (*, predicate, observation))]
@@ -566,6 +876,8 @@ enum Assessment {
     #[pyo3(constructor = (*, checks))]
     All { checks: Assessments },
 }
+
+identity!(Assessment, core::Assessment);
 
 impl From<core::Assessment> for Assessment {
     fn from(assessment: core::Assessment) -> Self {
@@ -618,10 +930,13 @@ impl Assessment {
     fn scores(&self, py: Python<'_>) -> PyResult<Py<PyTuple>> {
         tuple(py, core::Assessment::from(self.clone()).scores())
     }
+    fn to_python<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        python(py, &core::Assessment::from(self.clone()).plain())
+    }
 }
 
-#[pyclass(module = "kernel._native", frozen, from_py_object)]
-#[derive(Clone)]
+#[pyclass(module = "kernel._native", frozen, eq, hash, from_py_object)]
+#[derive(Clone, PartialEq, Hash)]
 struct SourceFile(core::File);
 
 #[pymethods]
@@ -639,10 +954,13 @@ impl SourceFile {
     fn contents(&self) -> &str {
         &self.0.contents
     }
+    fn to_python<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        python(py, &self.0.plain())
+    }
 }
 
-#[pyclass(module = "kernel._native", frozen, from_py_object)]
-#[derive(Clone)]
+#[pyclass(module = "kernel._native", frozen, eq, hash, from_py_object)]
+#[derive(Clone, PartialEq, Hash)]
 struct Instruction(core::Instruction);
 
 #[pymethods]
@@ -652,14 +970,17 @@ impl Instruction {
     fn new(prompt: String) -> Self {
         Self(core::Instruction { prompt })
     }
+    fn to_python<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        python(py, &self.0.plain())
+    }
     #[getter]
     fn prompt(&self) -> &str {
         &self.0.prompt
     }
 }
 
-#[pyclass(module = "kernel._native", frozen, from_py_object)]
-#[derive(Clone)]
+#[pyclass(module = "kernel._native", frozen, eq, hash, from_py_object)]
+#[derive(Clone, PartialEq, Hash)]
 struct Verifier(core::Verifier);
 
 #[pymethods]
@@ -707,10 +1028,13 @@ impl Verifier {
     fn timeout_seconds(&self) -> i64 {
         self.0.timeout_seconds
     }
+    fn to_python<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        python(py, &self.0.plain())
+    }
 }
 
-#[pyclass(module = "kernel._native", frozen, from_py_object)]
-#[derive(Clone)]
+#[pyclass(module = "kernel._native", frozen, eq, hash, from_py_object)]
+#[derive(Clone, PartialEq, Hash)]
 struct TextRule(core::TextRule);
 
 #[pymethods]
@@ -736,10 +1060,13 @@ impl TextRule {
     fn max_words(&self) -> i64 {
         self.0.max_words
     }
+    fn to_python<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        python(py, &self.0.plain())
+    }
 }
 
-#[pyclass(module = "kernel._native", frozen, from_py_object)]
-#[derive(Clone)]
+#[pyclass(module = "kernel._native", frozen, eq, hash, from_py_object)]
+#[derive(Clone, PartialEq, Hash)]
 struct Rubric(core::Rubric);
 
 #[pymethods]
@@ -770,9 +1097,12 @@ impl Rubric {
     fn text_rule(&self) -> Option<TextRule> {
         self.0.text_rule.clone().map(TextRule)
     }
+    fn to_python<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        python(py, &self.0.plain())
+    }
 }
 
-#[pyclass(module = "kernel._native", frozen, from_py_object)]
+#[pyclass(module = "kernel._native", frozen, eq, hash, from_py_object)]
 #[derive(Clone)]
 enum Criterion {
     #[pyo3(constructor = (*, verifier))]
@@ -782,6 +1112,8 @@ enum Criterion {
     #[pyo3(constructor = (*, predicate))]
     State { predicate: Pred },
 }
+
+identity!(Criterion, core::Criterion);
 
 impl From<core::Criterion> for Criterion {
     fn from(criterion: core::Criterion) -> Self {
@@ -818,10 +1150,13 @@ impl Criterion {
     fn condition(&self) -> Predicate {
         core::Criterion::from(self.clone()).condition().into()
     }
+    fn to_python<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        python(py, &core::Criterion::from(self.clone()).plain())
+    }
 }
 
-#[pyclass(module = "kernel._native", frozen, from_py_object)]
-#[derive(Clone)]
+#[pyclass(module = "kernel._native", frozen, eq, hash, from_py_object)]
+#[derive(Clone, PartialEq, Hash)]
 struct Reference(core::Reference);
 
 #[pymethods]
@@ -842,10 +1177,13 @@ impl Reference {
     fn completion(&self) -> Value {
         self.0.completion.clone().into()
     }
+    fn to_python<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        python(py, &self.0.plain())
+    }
 }
 
-#[pyclass(module = "kernel._native", frozen, from_py_object)]
-#[derive(Clone)]
+#[pyclass(module = "kernel._native", frozen, eq, hash, from_py_object)]
+#[derive(Clone, PartialEq, Hash)]
 struct Case(core::Case);
 
 #[pymethods]
@@ -853,6 +1191,9 @@ impl Case {
     #[getter]
     fn case_id(&self) -> &str {
         &self.0.case_id
+    }
+    fn to_python<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        python(py, &self.0.plain())
     }
     #[getter]
     fn prompt(&self) -> &str {
@@ -864,8 +1205,8 @@ impl Case {
     }
 }
 
-#[pyclass(module = "kernel._native", frozen, from_py_object)]
-#[derive(Clone)]
+#[pyclass(module = "kernel._native", frozen, eq, hash, from_py_object)]
+#[derive(Clone, PartialEq, Hash)]
 struct Issue(core::Issue);
 
 #[pymethods]
@@ -877,6 +1218,9 @@ impl Issue {
     #[getter]
     fn message(&self) -> &str {
         &self.0.message
+    }
+    fn to_python<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        python(py, &self.0.plain())
     }
 }
 
@@ -905,8 +1249,8 @@ fn grading_error(py: Python<'_>, failure: core::GradingFailure) -> PyErr {
     result.err().unwrap_or(error)
 }
 
-#[pyclass(module = "kernel._native", frozen, from_py_object)]
-#[derive(Clone)]
+#[pyclass(module = "kernel._native", frozen, eq, hash, from_py_object)]
+#[derive(Clone, PartialEq, Hash)]
 struct Task(core::Task);
 
 #[pymethods]
@@ -966,6 +1310,9 @@ impl Task {
     }
     fn project(&self) -> Case {
         Case(self.0.project())
+    }
+    fn to_python<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        python(py, &self.0.plain())
     }
     fn checks(&self) -> Option<Verifier> {
         self.0.checks().cloned().map(Verifier)
@@ -1043,6 +1390,7 @@ fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
         "REQUIRED_SCORES",
         tuple(module.py(), core::REQUIRED_SCORES.to_vec())?,
     )?;
+    module.add("NESTING_LIMIT", core::NESTING_LIMIT)?;
     module.add_function(wrap_pyfunction!(version, module)?)?;
     module.add_function(wrap_pyfunction!(source_hash, module)?)?;
     Ok(())
