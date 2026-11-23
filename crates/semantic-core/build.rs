@@ -12,7 +12,7 @@ pub const SOURCE_INPUTS: [&str; 12] = [
     "src/failure.rs",
     "src/task.rs",
     "src/criterion.rs",
-    "src/file_name.rs",
+    "src/file.rs",
     "src/support.rs",
 ];
 

@@ -1,4 +1,4 @@
-use crate::{File, Issue, Predicate, Value, file_name::FileName, support};
+use crate::{File, Issue, Predicate, Value, support};
 
 /* Verifier: an executable private check run on declared candidate inputs.
 https://docs.harborframework.com/tasks/verifier */
@@ -29,10 +29,7 @@ impl Verifier {
         if !support::unique(paths) {
             issues.push(Issue::new("verifier", "Overlapping verifier paths"));
         }
-        if self
-            .artifact_paths()
-            .any(|path| FileName::try_from(path).is_err())
-        {
+        if self.artifact_paths().any(|path| !File::is_valid_path(path)) {
             issues.push(Issue::new("verifier", "Invalid verifier path"));
         }
         if self.command.is_empty() || self.command.iter().any(String::is_empty) {

@@ -1,7 +1,7 @@
 mod assessment;
 mod criterion;
 mod failure;
-mod file_name;
+mod file;
 mod outcome;
 mod predicate;
 mod support;
@@ -11,9 +11,10 @@ mod value;
 pub use assessment::{Assessment, Scores};
 pub use criterion::{Criterion, Rubric, TextRule, Verifier};
 pub use failure::{GradingFailure, Issue, ValidationFailure};
+pub use file::File;
 pub use outcome::{Outcome, Verification};
 pub use predicate::Predicate;
-pub use task::{Case, File, Instruction, Reference, Task};
+pub use task::{Case, Instruction, Reference, Task};
 pub use value::Value;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
