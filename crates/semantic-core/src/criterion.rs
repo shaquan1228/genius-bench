@@ -29,7 +29,7 @@ impl Verifier {
         if !support::unique(paths) {
             issues.push(Issue::new("verifier", "Overlapping verifier paths"));
         }
-        if self.artifact_paths().any(|path| !support::valid_path(path)) {
+        if self.artifact_paths().any(|path| !File::is_valid_path(path)) {
             issues.push(Issue::new("verifier", "Invalid verifier path"));
         }
         if self.command.is_empty() || self.command.iter().any(String::is_empty) {

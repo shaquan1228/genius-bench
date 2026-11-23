@@ -4,15 +4,6 @@ pub(crate) fn word_count(text: &str) -> i64 {
         .count() as i64
 }
 
-pub(crate) fn valid_path(name: &str) -> bool {
-    name.as_bytes()
-        .first()
-        .is_some_and(|c| c.is_ascii_alphabetic() || *c == b'_')
-        && name
-            .bytes()
-            .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'_' | b'-' | b'.'))
-}
-
 pub(crate) fn valid_name(name: &str) -> bool {
     name.as_bytes().first().is_some_and(u8::is_ascii_lowercase)
         && name

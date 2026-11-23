@@ -1,7 +1,7 @@
 use sha2::{Digest, Sha256};
 use std::{fs, path::Path};
 
-pub const SOURCE_INPUTS: [&str; 11] = [
+pub const SOURCE_INPUTS: [&str; 12] = [
     "Cargo.toml",
     "build.rs",
     "src/lib.rs",
@@ -12,6 +12,7 @@ pub const SOURCE_INPUTS: [&str; 11] = [
     "src/failure.rs",
     "src/task.rs",
     "src/criterion.rs",
+    "src/file.rs",
     "src/support.rs",
 ];
 

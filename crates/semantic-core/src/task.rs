@@ -1,6 +1,6 @@
 use crate::{
-    Assessment, Criterion, GradingFailure, Issue, Outcome, Predicate, REQUIRED_SCORES, Scores,
-    ValidationFailure, Value, Verification, Verifier, support,
+    Assessment, Criterion, File, GradingFailure, Issue, Outcome, Predicate, REQUIRED_SCORES,
+    Scores, ValidationFailure, Value, Verification, Verifier, support,
 };
 
 /* Task: one test specification combining instruction, initial files, a criterion, and a
@@ -19,15 +19,6 @@ pub struct Task {
     criterion: Criterion,
     allowed_files: Vec<String>,
     reference: Reference,
-}
-
-/* Fixture files: immutable initial state, the seed for file and non-file environments.
-https://inspect.aisi.org.uk/datasets.html#sample-files
-https://docs.harborframework.com/tasks/environment */
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct File {
-    pub path: String,
-    pub contents: String,
 }
 
 /* Instruction: the task input, mapping to lighteval's query and OpenAI eval inputs.
@@ -71,18 +62,19 @@ impl Task {
         if !support::valid_name(&id) {
             issues.push(Issue::new("id", "Invalid case identity"));
         }
-        if fixture_paths.iter().any(|path| !support::valid_path(path)) {
+        if fixture_paths.iter().any(|path| !File::is_valid_path(path)) {
             issues.push(Issue::new("fixture", "Invalid path"));
         }
         if !support::unique(fixture_paths.iter().copied()) {
             issues.push(Issue::new("fixture", "Duplicate path"));
         }
-        if allowed_files.iter().any(|path| !support::valid_path(path)) {
+
+        if allowed_files.iter().any(|path| !File::is_valid_path(path)) {
             issues.push(Issue::new("allowed_files", "Invalid path"));
         }
         if reference_paths
             .iter()
-            .any(|path| !support::valid_path(path))
+            .any(|path| !File::is_valid_path(path))
         {
             issues.push(Issue::new("reference.edits", "Invalid path"));
         }
