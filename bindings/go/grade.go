@@ -38,9 +38,11 @@ func HarnessError(detail string) Verification {
 }
 
 type Task struct{ owner *nativeTask }
-type nativeTask struct{ ptr *C.gb_task }
+type nativeTask struct{ pointer unsafe.Pointer }
 
-func (task *nativeTask) free() { C.genius_bench_go_free_task(task.ptr) }
+func (task *nativeTask) ptr() *C.gb_task { return (*C.gb_task)(task.pointer) }
+
+func (task *nativeTask) free() { C.genius_bench_go_free_task(task.ptr()) }
 
 func variant[T any](value any) (T, bool) {
 	switch v := value.(type) {
@@ -78,7 +80,7 @@ func NewTask(spec TaskSpec) (*Task, error) {
 		_, err := readResult(result)
 		return nil, err
 	}
-	owner := &nativeTask{pointer}
+	owner := &nativeTask{unsafe.Pointer(pointer)}
 	runtime.SetFinalizer(owner, (*nativeTask).free)
 	return &Task{owner}, nil
 }
@@ -99,7 +101,7 @@ func (task *Task) Grade(outcome Outcome) ([]Score, error) {
 		response:      C.uint8_t(spec.Response.tag),
 		facts:         input.facts(spec.Facts),
 	}
-	result := C.genius_bench_go_grade(task.owner.ptr, &observation)
+	result := C.genius_bench_go_grade(task.owner.ptr(), &observation)
 	runtime.KeepAlive(task.owner)
 	return readResult(result)
 }
@@ -110,7 +112,7 @@ func (task *Task) GradeReference(verification Verification) ([]Score, error) {
 	}
 	var input nativeInput
 	defer input.Unpin()
-	result := C.genius_bench_go_grade_reference(task.owner.ptr, input.verification(verification))
+	result := C.genius_bench_go_grade_reference(task.owner.ptr(), input.verification(verification))
 	runtime.KeepAlive(task.owner)
 	return readResult(result)
 }
