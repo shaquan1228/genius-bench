@@ -25,13 +25,17 @@ impl Value {
         )
     }
 
-    pub fn get(&self, path: &[impl AsRef<str>]) -> Option<&Self> {
+    pub fn get<Segment>(&self, path: &[Segment]) -> Option<&Self>
+    where
+        Segment: AsRef<str>,
+    {
         let mut current = self;
-        for name in path {
+        for segment in path {
             let Self::Record(fields) = current else {
                 return None;
             };
-            current = match fields.iter().find(|(key, _)| key == name.as_ref()) {
+            let field_name: &str = segment.as_ref();
+            current = match fields.iter().find(|(key, _)| key == field_name) {
                 Some((_, child)) => child,
                 None => return None,
             };

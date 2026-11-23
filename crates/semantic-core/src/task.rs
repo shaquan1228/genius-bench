@@ -264,7 +264,8 @@ impl Task {
     }
 
     pub fn grade(&self, outcome: &Outcome) -> Result<Scores, GradingFailure> {
-        self.assess(outcome).map(|assessment| assessment.scores())
+        let assessment = self.assess(outcome)?;
+        Ok(assessment.scores())
     }
 }
 
