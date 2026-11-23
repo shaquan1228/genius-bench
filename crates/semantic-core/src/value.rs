@@ -31,7 +31,10 @@ impl Value {
             let Self::Record(fields) = current else {
                 return None;
             };
-            current = &fields.iter().find(|(key, _)| key == name.as_ref())?.1;
+            current = match fields.iter().find(|(key, _)| key == name.as_ref()) {
+                Some((_, child)) => child,
+                None => return None,
+            };
         }
         Some(current)
     }
