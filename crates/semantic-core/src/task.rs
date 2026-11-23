@@ -141,134 +141,60 @@ impl Task {
         reference: Reference,
     ) -> Result<Self, ValidationFailure> {
         let fixture_paths: Vec<_> = fixture.iter().map(|file| file.path.as_str()).collect();
-        let edits: Vec<_> = reference
+        let reference_paths: Vec<_> = reference
             .edits
             .iter()
             .map(|file| file.path.as_str())
             .collect();
         let mut issues = Vec::new();
-        let mut require = |ok: bool, field: &str, message: &str| {
-            if !ok {
-                issues.push(Issue {
-                    field: field.into(),
-                    message: message.into(),
-                });
-            }
-        };
-        require(support::valid_name(&id), "id", "Invalid case identity");
         require(
-            fixture_paths
-                .iter()
-                .copied()
-                .chain(allowed_files.iter().map(String::as_str))
-                .chain(edits.iter().copied())
-                .all(support::valid_path),
-            "fixture",
+            &mut issues,
+            support::valid_name(&id),
+            "id",
+            "Invalid case identity",
+        );
+        validate_file_paths(&mut issues, "fixture", &fixture_paths);
+        require(
+            &mut issues,
+            allowed_files.iter().all(|path| support::valid_path(path)),
+            "allowed_files",
             "Invalid path",
         );
+        validate_file_paths(&mut issues, "reference.edits", &reference_paths);
+
+        let edits_within_scope = reference
+            .edits
+            .iter()
+            .all(|file| allowed_files.contains(&file.path));
         require(
-            support::unique(fixture_paths.iter().copied())
-                && support::unique(edits.iter().copied()),
-            "fixture",
-            "Duplicate path",
-        );
-        require(
-            edits
-                .iter()
-                .all(|path| allowed_files.iter().any(|allowed| allowed == path)),
+            &mut issues,
+            edits_within_scope,
             "reference.edits",
             "Reference edits files outside allowed_files",
         );
+
         match &criterion {
             Criterion::Code { verifier } => {
-                let artifacts: Vec<_> = verifier
-                    .files
-                    .iter()
-                    .chain(&verifier.tools)
-                    .map(|file| file.path.as_str())
-                    .collect();
-                require(
-                    !verifier.inputs.is_empty(),
-                    "verifier.inputs",
-                    "Verifier inputs cannot be empty",
-                );
-                require(
-                    verifier
-                        .inputs
-                        .iter()
-                        .all(|input| fixture_paths.contains(&input.as_str())),
-                    "verifier.inputs",
-                    "Criteria read files missing from the fixture",
-                );
-                require(
-                    !artifacts.iter().any(|path| fixture_paths.contains(path)),
-                    "verifier",
-                    "Verifier artifacts overlap fixture",
-                );
-                require(
-                    support::unique(
-                        verifier
-                            .inputs
-                            .iter()
-                            .map(String::as_str)
-                            .chain(artifacts.iter().copied()),
-                    ),
-                    "verifier",
-                    "Overlapping verifier paths",
-                );
-                require(
-                    artifacts.iter().copied().all(support::valid_path),
-                    "verifier",
-                    "Invalid verifier path",
-                );
-                require(
-                    !verifier.command.is_empty()
-                        && verifier.command.iter().all(|part| !part.is_empty()),
-                    "verifier.command",
-                    "Invalid verifier command",
-                );
-                require(
-                    verifier.timeout_seconds > 0,
-                    "verifier.timeout_seconds",
-                    "Verifier timeout must be positive",
-                );
+                validate_verifier(&mut issues, verifier, &fixture_paths);
             }
-            Criterion::Answer { rubric } => {
-                require(
-                    !rubric.expected.is_empty() || rubric.text_rule.is_some(),
-                    "rubric",
-                    "Empty rubric",
-                );
-                require(
-                    rubric.text_rule.as_ref().is_none_or(|rule| {
-                        rule.min_words >= 0
-                            && rule.min_words <= rule.max_words
-                            && !rubric
-                                .expected
-                                .iter()
-                                .any(|(field, _)| field == &rule.field)
-                    }),
-                    "rubric.text_rule",
-                    "Invalid text rule",
-                );
-            }
+            Criterion::Answer { rubric } => validate_rubric(&mut issues, rubric),
             Criterion::State { .. } => {}
         }
-        if issues.is_empty() {
-            Ok(Self {
-                id,
-                fixture,
-                instruction,
-                criterion,
-                allowed_files,
-                reference,
-            })
-        } else {
-            Err(ValidationFailure {
+
+        if !issues.is_empty() {
+            return Err(ValidationFailure {
                 case_id: Some(id),
                 issues,
-            })
+            });
         }
+        Ok(Self {
+            id,
+            fixture,
+            instruction,
+            criterion,
+            allowed_files,
+            reference,
+        })
     }
 
     pub fn id(&self) -> &str {
@@ -339,5 +265,119 @@ impl Task {
 
     pub fn grade(&self, outcome: &Outcome) -> Result<Scores, GradingFailure> {
         self.assess(outcome).map(|assessment| assessment.scores())
+    }
+}
+
+fn validate_file_paths(issues: &mut Vec<Issue>, field: &str, paths: &[&str]) {
+    require(
+        issues,
+        paths.iter().copied().all(support::valid_path),
+        field,
+        "Invalid path",
+    );
+    require(
+        issues,
+        support::unique(paths.iter().copied()),
+        field,
+        "Duplicate path",
+    );
+}
+
+fn validate_verifier(issues: &mut Vec<Issue>, verifier: &Verifier, fixture_paths: &[&str]) {
+    require(
+        issues,
+        !verifier.inputs.is_empty(),
+        "verifier.inputs",
+        "Verifier inputs cannot be empty",
+    );
+    let inputs_in_fixture = verifier
+        .inputs
+        .iter()
+        .all(|input| fixture_paths.contains(&input.as_str()));
+    require(
+        issues,
+        inputs_in_fixture,
+        "verifier.inputs",
+        "Criteria read files missing from the fixture",
+    );
+
+    let artifact_paths: Vec<_> = verifier
+        .files
+        .iter()
+        .chain(&verifier.tools)
+        .map(|file| file.path.as_str())
+        .collect();
+    let artifacts_overlap_fixture = artifact_paths
+        .iter()
+        .any(|path| fixture_paths.contains(path));
+    require(
+        issues,
+        !artifacts_overlap_fixture,
+        "verifier",
+        "Verifier artifacts overlap fixture",
+    );
+    let verifier_paths = verifier
+        .inputs
+        .iter()
+        .map(String::as_str)
+        .chain(artifact_paths.iter().copied());
+    require(
+        issues,
+        support::unique(verifier_paths),
+        "verifier",
+        "Overlapping verifier paths",
+    );
+    require(
+        issues,
+        artifact_paths.iter().copied().all(support::valid_path),
+        "verifier",
+        "Invalid verifier path",
+    );
+
+    let command_is_valid =
+        !verifier.command.is_empty() && verifier.command.iter().all(|part| !part.is_empty());
+    require(
+        issues,
+        command_is_valid,
+        "verifier.command",
+        "Invalid verifier command",
+    );
+    require(
+        issues,
+        verifier.timeout_seconds > 0,
+        "verifier.timeout_seconds",
+        "Verifier timeout must be positive",
+    );
+}
+
+fn validate_rubric(issues: &mut Vec<Issue>, rubric: &Rubric) {
+    require(
+        issues,
+        !rubric.expected.is_empty() || rubric.text_rule.is_some(),
+        "rubric",
+        "Empty rubric",
+    );
+    let Some(rule) = &rubric.text_rule else {
+        return;
+    };
+    let bounds_are_valid = rule.min_words >= 0 && rule.min_words <= rule.max_words;
+    let text_field_is_expected = rubric
+        .expected
+        .iter()
+        .any(|(field, _)| field == &rule.field);
+    require(
+        issues,
+        bounds_are_valid && !text_field_is_expected,
+        "rubric.text_rule",
+        "Invalid text rule",
+    );
+}
+
+fn require(issues: &mut Vec<Issue>, condition: bool, field: &str, message: &str) {
+    if !condition {
+        issues.push(Issue {
+            field: field.into(),
+            message: message.into(),
+        });
     }
 }
