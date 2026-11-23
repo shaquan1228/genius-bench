@@ -60,7 +60,11 @@ fn owned_task_and_projection_snapshots_preserve_invariants() {
     let mut instruction = Instruction {
         prompt: "Complete the response.".into(),
     };
-    let mut allowed = vec!["source.txt".into()];
+    let mut allowed = vec![
+        "source.txt".into(),
+        "_helper-2.toml".into(),
+        "source.txt".into(),
+    ];
     let mut rubric = Rubric {
         expected: vec![("answer".into(), Value::Int(7))],
         text_rule: None,
@@ -105,14 +109,17 @@ fn owned_task_and_projection_snapshots_preserve_invariants() {
             }],
         }
     );
-    assert_eq!(task.allowed_files(), ["source.txt"]);
+    assert_eq!(
+        task.allowed_files(),
+        ["source.txt", "_helper-2.toml", "source.txt"]
+    );
     assert_eq!(task.reference().edits.len(), 1);
     assert_eq!(
         task.reference().completion,
         Value::String("private reference".into())
     );
     assert!(task.checks().is_none());
-    let mut outcome = Outcome::new(vec![], Verification::Unchecked);
+    let mut outcome = Outcome::new(vec!["_helper-2.toml".into()], Verification::Unchecked);
     outcome.response = Value::Record(vec![("answer".into(), Value::Int(7))]);
     assert_eq!(
         task.grade(&outcome).unwrap(),
@@ -337,6 +344,41 @@ fn invalid_generic_declarations_retain_validation_failures() {
             expected
         );
     }
+}
+
+#[test]
+fn invalid_matching_paths_keep_their_own_diagnostics() {
+    let invalid_path = "missing/name.txt".to_owned();
+    let failure = Task::new(
+        "invalid-matching-paths".into(),
+        vec![],
+        Instruction {
+            prompt: "Report custom state.".into(),
+        },
+        Criterion::State {
+            predicate: Predicate::All { checks: vec![] },
+        },
+        vec![invalid_path.clone()],
+        Reference {
+            edits: vec![File {
+                path: invalid_path,
+                contents: String::new(),
+            }],
+            completion: Value::Null,
+        },
+    )
+    .unwrap_err();
+    assert_eq!(
+        failure
+            .issues
+            .iter()
+            .map(|issue| (issue.field.as_str(), issue.message.as_str()))
+            .collect::<Vec<_>>(),
+        [
+            ("allowed_files", "Invalid path"),
+            ("reference.edits", "Invalid path")
+        ]
+    );
 }
 
 #[test]

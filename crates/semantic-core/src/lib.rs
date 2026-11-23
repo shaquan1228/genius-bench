@@ -1,6 +1,7 @@
 mod assessment;
 mod criterion;
 mod failure;
+mod file_name;
 mod outcome;
 mod predicate;
 mod support;

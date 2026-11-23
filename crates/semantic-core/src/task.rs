@@ -1,6 +1,8 @@
 use crate::{
     Assessment, Criterion, GradingFailure, Issue, Outcome, Predicate, REQUIRED_SCORES, Scores,
-    ValidationFailure, Value, Verification, Verifier, support,
+    ValidationFailure, Value, Verification, Verifier,
+    file_name::{AllowedFiles, FileName},
+    support,
 };
 
 /* Task: one test specification combining instruction, initial files, a criterion, and a
@@ -17,7 +19,7 @@ pub struct Task {
     fixture: Vec<File>,
     instruction: Instruction,
     criterion: Criterion,
-    allowed_files: Vec<String>,
+    allowed_files: AllowedFiles,
     reference: Reference,
 }
 
@@ -71,18 +73,27 @@ impl Task {
         if !support::valid_name(&id) {
             issues.push(Issue::new("id", "Invalid case identity"));
         }
-        if fixture_paths.iter().any(|path| !support::valid_path(path)) {
+        if fixture_paths
+            .iter()
+            .any(|path| FileName::try_from(*path).is_err())
+        {
             issues.push(Issue::new("fixture", "Invalid path"));
         }
         if !support::unique(fixture_paths.iter().copied()) {
             issues.push(Issue::new("fixture", "Duplicate path"));
         }
-        if allowed_files.iter().any(|path| !support::valid_path(path)) {
+
+        let edits_outside_scope = reference
+            .edits
+            .iter()
+            .any(|file| !allowed_files.contains(&file.path));
+        let allowed_files = AllowedFiles::try_from(allowed_files);
+        if allowed_files.is_err() {
             issues.push(Issue::new("allowed_files", "Invalid path"));
         }
         if reference_paths
             .iter()
-            .any(|path| !support::valid_path(path))
+            .any(|path| FileName::try_from(*path).is_err())
         {
             issues.push(Issue::new("reference.edits", "Invalid path"));
         }
@@ -90,10 +101,6 @@ impl Task {
             issues.push(Issue::new("reference.edits", "Duplicate path"));
         }
 
-        let edits_outside_scope = reference
-            .edits
-            .iter()
-            .any(|file| !allowed_files.contains(&file.path));
         if edits_outside_scope {
             issues.push(Issue::new(
                 "reference.edits",
@@ -131,20 +138,20 @@ impl Task {
             Criterion::State { .. } => {}
         }
 
-        if !issues.is_empty() {
-            return Err(ValidationFailure {
+        match allowed_files {
+            Ok(allowed_files) if issues.is_empty() => Ok(Self {
+                id,
+                fixture,
+                instruction,
+                criterion,
+                allowed_files,
+                reference,
+            }),
+            _ => Err(ValidationFailure {
                 case_id: Some(id),
                 issues,
-            });
+            }),
         }
-        Ok(Self {
-            id,
-            fixture,
-            instruction,
-            criterion,
-            allowed_files,
-            reference,
-        })
     }
 
     pub fn id(&self) -> &str {
@@ -160,7 +167,7 @@ impl Task {
         &self.criterion
     }
     pub fn allowed_files(&self) -> &[String] {
-        &self.allowed_files
+        self.allowed_files.as_slice()
     }
     pub fn reference(&self) -> &Reference {
         &self.reference
@@ -198,8 +205,8 @@ impl Task {
             path: vec!["changed_files".into()],
             allowed: self
                 .allowed_files
-                .iter()
-                .map(|name| Value::String(name.clone()))
+                .names()
+                .map(|name| Value::String(name.as_str().into()))
                 .collect(),
         };
         Ok(Assessment::new(
