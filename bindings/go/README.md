@@ -1,9 +1,12 @@
-# Go grading bridge
+# Go binding
 
-The Go package calls the Rust grading core through cgo. It supports state tasks
-whose criterion checks for a value at `Task.PresentPath`. The response and
-reference completion can each be a boolean or null. The task has an empty
-fixture and reference edit list, and the outcome has an empty facts list.
+Declare a task with an instruction, criterion, allowed files, and reference.
+`NewTask` validates the declaration and takes a snapshot of it. Construct an
+outcome to grade an observed run, or call `task.GradeReference` to grade the
+task's reference with a verification result.
+
+The Go proof supports the state criterion and presence predicate. Responses,
+reference completions, and facts can hold boolean or null values.
 
 From a source checkout with Go 1.22 or newer, the repository's Rust toolchain,
 and a C compiler installed, run:
@@ -39,12 +42,23 @@ import (
 )
 
 func main() {
-	answer := true
-	task := bench.Task{
-		ID: "installed", Prompt: "observe", PresentPath: []string{"response"},
-		ReferenceCompletion: &answer,
+	task, err := bench.NewTask(bench.TaskSpec{
+		ID:          "installed",
+		Instruction: bench.Instruction{Prompt: "observe"},
+		Criterion:   bench.State{Predicate: bench.Present{Path: []string{"response"}}},
+		Reference:   bench.Reference{Completion: bench.Bool(true)},
+	})
+	if err != nil {
+		log.Fatal(err)
 	}
-	scores, err := bench.Grade(task, bench.Outcome{Response: &answer})
+	outcome, err := bench.NewOutcome(bench.OutcomeSpec{
+		Verification: bench.Unchecked(),
+		Response:     bench.Bool(true),
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	scores, err := task.Grade(outcome)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -55,9 +69,11 @@ func main() {
 ```
 
 The output is `correctness true` followed by `scope true`. Adding
-`ChangedFiles: []string{"extra.txt"}` to the outcome changes the second score
-to `false`. Use `errors.As` with `*bench.ValidationError` for declaration
-issues or `*bench.GradingError` for a verification harness failure.
+`ChangedFiles: []string{"extra.txt"}` to the outcome declaration changes
+the second score to `false`. Calling `task.GradeReference(bench.Unchecked())` grades the
+reference completion and edits from the original declaration. Use
+`errors.As` with `*bench.ValidationError` for declaration issues or
+`*bench.GradingError` for a verification harness failure.
 
 After changing the Rust library, rebuild the archive and run `go build -a` or
 `go test -a` to refresh Go’s cached native link.

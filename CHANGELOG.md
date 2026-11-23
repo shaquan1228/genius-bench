@@ -8,5 +8,5 @@
   Linux x86_64 and macOS arm64 on CPython 3.12 and newer.
 - Ruby gem `genius-bench-kernel`: native bindings, source and platform gems
   for Ruby 3.2 through 3.4 on Linux x86_64 and macOS arm64.
-- Go source binding: grade presence-based state tasks with ordered scores and
-  typed validation and grading errors.
+- Go source binding: construct validated state tasks with presence predicates,
+  grade outcomes and references, and inspect ordered scores and typed errors.
