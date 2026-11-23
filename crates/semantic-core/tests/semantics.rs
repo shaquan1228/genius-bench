@@ -241,6 +241,38 @@ fn invalid_generic_declarations_retain_validation_failures() {
             ],
         ),
         (
+            Criterion::Code {
+                verifier: Verifier {
+                    inputs: vec!["missing.txt".into()],
+                    files: vec![File {
+                        path: "missing.txt".into(),
+                        contents: String::new(),
+                    }],
+                    tools: vec![File {
+                        path: "../source.txt".into(),
+                        contents: String::new(),
+                    }],
+                    command: vec![String::new()],
+                    stdin: String::new(),
+                    timeout_seconds: -1,
+                },
+            },
+            vec![
+                (
+                    "verifier.inputs",
+                    "Criteria read files missing from the fixture",
+                ),
+                ("verifier", "Verifier artifacts overlap fixture"),
+                ("verifier", "Overlapping verifier paths"),
+                ("verifier", "Invalid verifier path"),
+                ("verifier.command", "Invalid verifier command"),
+                (
+                    "verifier.timeout_seconds",
+                    "Verifier timeout must be positive",
+                ),
+            ],
+        ),
+        (
             Criterion::Answer {
                 rubric: Rubric {
                     expected: vec![],
