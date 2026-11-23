@@ -18,7 +18,11 @@ struct Buffer<T> {
 impl<T> From<&[T]> for Buffer<T> {
     fn from(values: &[T]) -> Self {
         Self {
-            data: values.as_ptr(),
+            data: if values.is_empty() {
+                ptr::null()
+            } else {
+                values.as_ptr()
+            },
             len: values.len(),
         }
     }
@@ -355,6 +359,7 @@ mod tests {
             assert!(task.is_null());
             let info = genius_bench_go_info(reply);
             assert_eq!(info.tag, 3);
+            assert!(info.code.data.is_null());
             assert_eq!(info.detail.read().unwrap(), b"Missing task declaration");
             genius_bench_go_free_result(reply);
             genius_bench_go_free_result(ptr::null_mut());
