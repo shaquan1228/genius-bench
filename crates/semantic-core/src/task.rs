@@ -71,11 +71,24 @@ impl Task {
         if !support::valid_name(&id) {
             issues.push(Issue::new("id", "Invalid case identity"));
         }
-        validate_file_paths(&mut issues, "fixture", &fixture_paths);
+        if fixture_paths.iter().any(|path| !support::valid_path(path)) {
+            issues.push(Issue::new("fixture", "Invalid path"));
+        }
+        if !support::unique(fixture_paths.iter().copied()) {
+            issues.push(Issue::new("fixture", "Duplicate path"));
+        }
         if allowed_files.iter().any(|path| !support::valid_path(path)) {
             issues.push(Issue::new("allowed_files", "Invalid path"));
         }
-        validate_file_paths(&mut issues, "reference.edits", &reference_paths);
+        if reference_paths
+            .iter()
+            .any(|path| !support::valid_path(path))
+        {
+            issues.push(Issue::new("reference.edits", "Invalid path"));
+        }
+        if !support::unique(reference_paths.iter().copied()) {
+            issues.push(Issue::new("reference.edits", "Duplicate path"));
+        }
 
         let edits_outside_scope = reference
             .edits
@@ -90,7 +103,28 @@ impl Task {
 
         match &criterion {
             Criterion::Code { verifier } => {
-                validate_verifier_fixture(&mut issues, verifier, &fixture_paths);
+                if verifier.inputs.is_empty() {
+                    issues.push(Issue::new(
+                        "verifier.inputs",
+                        "Verifier inputs cannot be empty",
+                    ));
+                }
+                let missing_fixture_input = verifier
+                    .inputs
+                    .iter()
+                    .any(|input| !fixture_paths.contains(&input.as_str()));
+                if missing_fixture_input {
+                    issues.push(Issue::new(
+                        "verifier.inputs",
+                        "Criteria read files missing from the fixture",
+                    ));
+                }
+                let artifacts_overlap_fixture = verifier
+                    .artifact_paths()
+                    .any(|path| fixture_paths.contains(&path));
+                if artifacts_overlap_fixture {
+                    issues.push(Issue::new("verifier", "Verifier artifacts overlap fixture"));
+                }
                 verifier.validate_configuration(&mut issues);
             }
             Criterion::Answer { rubric } => rubric.validate(&mut issues),
@@ -182,39 +216,5 @@ impl Task {
     pub fn grade(&self, outcome: &Outcome) -> Result<Scores, GradingFailure> {
         let assessment = self.assess(outcome)?;
         Ok(assessment.scores())
-    }
-}
-
-fn validate_file_paths(issues: &mut Vec<Issue>, field: &str, paths: &[&str]) {
-    if paths.iter().any(|path| !support::valid_path(path)) {
-        issues.push(Issue::new(field, "Invalid path"));
-    }
-    if !support::unique(paths.iter().copied()) {
-        issues.push(Issue::new(field, "Duplicate path"));
-    }
-}
-
-fn validate_verifier_fixture(issues: &mut Vec<Issue>, verifier: &Verifier, fixture_paths: &[&str]) {
-    if verifier.inputs.is_empty() {
-        issues.push(Issue::new(
-            "verifier.inputs",
-            "Verifier inputs cannot be empty",
-        ));
-    }
-    let missing_fixture_input = verifier
-        .inputs
-        .iter()
-        .any(|input| !fixture_paths.contains(&input.as_str()));
-    if missing_fixture_input {
-        issues.push(Issue::new(
-            "verifier.inputs",
-            "Criteria read files missing from the fixture",
-        ));
-    }
-    if verifier
-        .artifact_paths()
-        .any(|path| fixture_paths.contains(&path))
-    {
-        issues.push(Issue::new("verifier", "Verifier artifacts overlap fixture"));
     }
 }

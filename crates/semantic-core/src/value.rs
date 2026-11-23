@@ -35,10 +35,8 @@ impl Value {
                 return None;
             };
             let field_name: &str = segment.as_ref();
-            current = match fields.iter().find(|(key, _)| key == field_name) {
-                Some((_, child)) => child,
-                None => return None,
-            };
+            let (_, child) = fields.iter().find(|(key, _)| key == field_name)?;
+            current = child;
         }
         Some(current)
     }
