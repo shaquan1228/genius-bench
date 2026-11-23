@@ -144,6 +144,9 @@ def check(cargo, uv, python, bundle, ruby):
                 cargo,
             ]
         )
+    commands.append(
+        [sys.executable, str(ROOT / "bindings/go/check.py"), "--cargo", cargo]
+    )
     for command in commands:
         print("+ " + " ".join(command), flush=True)
         subprocess.run(command, cwd=ROOT, env=environment, check=True)

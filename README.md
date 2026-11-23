@@ -6,6 +6,7 @@ Task declarations and observed outcomes produce assessments with named scores
 and supporting evidence.
 
 The Rust core, typed Python package, and native Ruby gem are implemented.
+The Go source binding grades state tasks with a presence predicate through cgo.
 Genius's runtime migration and registry publication remain separate work.
 
 - Rust owns values, predicates, declaration validation, public case projections,
@@ -37,11 +38,15 @@ checked `sig/genius_bench.rbs` declarations mirror the Python package. Platform
 gems for Linux x86_64 and macOS arm64 on Ruby 3.2 through 3.4 install without
 Rust; the source gem vendors the core and needs Rust at install time.
 
-For development, install Rust from `rust-toolchain.toml`, Ruby 3.3 from
-`.tool-versions`, uv, and CPython 3.12:
+See the [Go binding guide](bindings/go/README.md) for the supported task shape
+and a runnable grading example.
+
+For development, install Go 1.22 or newer, a C compiler, Rust from
+`rust-toolchain.toml`, Ruby 3.3 from `.tool-versions`, uv, and CPython 3.12.
 
 ```sh
 cargo fetch --locked
+cargo fetch --locked --manifest-path bindings/go/native/Cargo.toml
 cargo fetch --locked --manifest-path bindings/ruby/Cargo.toml
 uv sync --project bindings/python --locked --no-install-project --python 3.12
 bundle install --gemfile bindings/ruby/Gemfile
@@ -54,7 +59,8 @@ an extracted source distribution, including boundary and type checks, then
 lints, compiles, and tests the Ruby extension, checks its RBS declarations
 statically and at runtime, and installs the source and host platform gems into
 an isolated gem home where both grade with no compiler on the subprocess
-`PATH`. `make clean` removes build output.
+`PATH`. It also builds the Rust static library and runs the Go grading tests.
+`make clean` removes build output.
 
 See the [Python package guide](bindings/python/README.md) and the
 [Ruby gem guide](bindings/ruby/README.md) for API examples, adapters,

@@ -13,6 +13,10 @@ jobs:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: bindings/go/go.mod
+          cache: false
       - uses: astral-sh/setup-uv@v7
         with:
           version: "0.11.11"
@@ -24,6 +28,7 @@ jobs:
           working-directory: bindings/ruby
       - run: rustup show active-toolchain
       - run: cargo fetch --locked
+      - run: cargo fetch --locked --manifest-path bindings/go/native/Cargo.toml
       - run: cargo fetch --locked --manifest-path bindings/ruby/Cargo.toml
       - run: uv sync --project bindings/python --locked --no-install-project --python 3.12
       - run: make check
