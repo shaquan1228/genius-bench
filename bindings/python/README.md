@@ -89,6 +89,35 @@ nested dataclasses. `from_pydantic(value=...)` adapts Pydantic 2 models through
 `model_dump(mode="python")`. Pydantic is optional and imported only when that
 adapter is called. SDKs are not imported by the package.
 
+Implement `__kernel_value__()` to pass a domain object directly to a typed
+predicate. The method below exposes the order total in integer cents and
+includes a null note.
+
+```python
+from dataclasses import dataclass
+
+from kernel import KernelValue, Predicate, Value
+
+
+@dataclass(frozen=True)
+class Order:
+    total_cents: int
+
+    def __kernel_value__(self) -> dict[str, int | None]:
+        return {"total_cents": self.total_cents, "note": None}
+
+
+order: KernelValue = Order(total_cents=4200)
+check = Predicate.Equals(path=["total_cents"], expected=4200)
+assert check.holds(observation=order)
+
+match check:
+    case Predicate.Equals(path=path, expected=Value.Int(value=cents)):
+        print(list(path), cents)
+```
+
+The match prints `['total_cents'] 4200`.
+
 The wheel includes `py.typed` and checked `__init__.pyi` declarations. Checked
 stubs describe the recursive conversion protocol, native keyword constructors,
 read-only properties, tuple snapshots, and structured error attributes without

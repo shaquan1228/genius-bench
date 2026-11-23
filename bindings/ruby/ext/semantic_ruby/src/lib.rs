@@ -15,6 +15,10 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 trait Wrapped: TypedData {
     type Inner: PartialEq + Hash + fmt::Debug;
     fn inner(&self) -> &Self::Inner;
+
+    fn inspect_value(&self) -> impl fmt::Debug + '_ {
+        self.inner()
+    }
 }
 
 macro_rules! wrapped {
@@ -49,7 +53,7 @@ fn hash_code<T: Wrapped>(this: &T) -> i64 {
 }
 
 fn inspect<T: Wrapped>(ruby: &Ruby, this: &T) -> String {
-    format!("#<{} {:?}>", T::class_for(ruby, this), this.inner())
+    format!("#<{} {:?}>", T::class_for(ruby, this), this.inspect_value())
 }
 
 static VALIDATION_ERROR: Lazy<ExceptionClass> =
@@ -237,16 +241,12 @@ fn convert(
     active: &mut HashSet<usize>,
     depth: usize,
 ) -> Result<core::Value, Error> {
-    if let Ok(native) = <&Value>::try_convert(value) {
-        check_value_depth(ruby, &native.0, depth)?;
-        return Ok(native.0.clone());
-    }
-    if let Ok(record) = <&Record>::try_convert(value) {
-        check_depth(ruby, depth + 1, "Kernel value")?;
-        for (_, item) in &record.0 {
-            check_value_depth(ruby, item, depth + 1)?;
-        }
-        return Ok(core::Value::Record(record.0.clone()));
+    let native = <&Value>::try_convert(value)
+        .map(Wrapped::inner)
+        .or_else(|_| <&Record>::try_convert(value).map(Wrapped::inner));
+    if let Ok(native) = native {
+        check_value_depth(ruby, native, depth)?;
+        return Ok(native.clone());
     }
     if value.is_nil() {
         return Ok(core::Value::Null);
@@ -319,12 +319,12 @@ https://docs.rs/magnus/0.9.3/magnus/trait.TypedData.html#method.class_for
 https://docs.ruby-lang.org/en/3.3/syntax/pattern_matching_rdoc.html */
 type Shape = &'static [(&'static str, &'static [&'static str])];
 
-trait Variants: Wrapped + Sized {
+trait Variants: TypedData {
     /// Variant class names and their field readers, in core declaration order.
     const SHAPE: Shape;
     fn variant(&self) -> usize;
-    fn values(&self, ruby: &Ruby) -> Result<Vec<RValue>, Error>;
-    fn build(ruby: &Ruby, variant: usize, fields: Vec<RValue>) -> Result<Self, Error>;
+    fn field(&self, ruby: &Ruby, index: usize) -> Result<RValue, Error>;
+    fn build(ruby: &Ruby, variant: usize, fields: &[RValue]) -> Result<Self, Error>;
 }
 
 macro_rules! sum_type {
@@ -364,23 +364,24 @@ fn variant_class<T: Variants>(ruby: &Ruby, variant: usize) -> RClass {
         .expect("GeniusBench variant classes are defined at initialization")
 }
 
-fn keywords(ruby: &Ruby, args: &[RValue], names: &[&str]) -> Result<Vec<RValue>, Error> {
+fn keywords(ruby: &Ruby, args: &[RValue], names: &[&str]) -> Result<[RValue; 3], Error> {
+    let nil = ruby.qnil().as_value();
     Ok(match names.len() {
         0 => {
             required::<()>(args, names)?;
-            vec![]
+            [nil; 3]
         }
         1 => {
             let (first,): (RValue,) = required(args, names)?;
-            vec![first]
+            [first, nil, nil]
         }
         2 => {
             let (first, second): (RValue, RValue) = required(args, names)?;
-            vec![first, second]
+            [first, second, nil]
         }
         3 => {
             let (first, second, third): (RValue, RValue, RValue) = required(args, names)?;
-            vec![first, second, third]
+            [first, second, third]
         }
         count => return Err(argument_error(ruby, format!("{count} fields exceed 3"))),
     })
@@ -390,21 +391,27 @@ fn construct<T: Variants>(ruby: &Ruby, class: RClass, args: &[RValue]) -> Result
     let variant = (0..T::SHAPE.len())
         .find(|&variant| variant_class::<T>(ruby, variant).as_raw() == class.as_raw())
         .ok_or_else(|| unexpected(ruby, "a variant class", class.as_value()))?;
-    let fields = keywords(ruby, args, T::SHAPE[variant].1)?;
-    Ok(frozen(ruby, T::build(ruby, variant, fields)?))
+    let names = T::SHAPE[variant].1;
+    let fields = keywords(ruby, args, names)?;
+    Ok(frozen(
+        ruby,
+        T::build(ruby, variant, &fields[..names.len()])?,
+    ))
 }
 
 fn field_at<T: Variants, const INDEX: usize>(ruby: &Ruby, this: &T) -> Result<RValue, Error> {
-    this.values(ruby)?
-        .into_iter()
-        .nth(INDEX)
-        .ok_or_else(|| type_error(ruby, format!("Variant has no field {INDEX}")))
+    this.field(ruby, INDEX)
+}
+
+fn missing_variant_field(ruby: &Ruby, index: usize) -> Error {
+    type_error(ruby, format!("Variant has no field {index}"))
 }
 
 fn deconstruct_keys<T: Variants>(ruby: &Ruby, this: &T, _keys: RValue) -> Result<RHash, Error> {
     let result = ruby.hash_new();
-    for (name, value) in T::SHAPE[this.variant()].1.iter().zip(this.values(ruby)?) {
-        result.aset(ruby.to_symbol(name), value)?;
+    for (index, name) in T::SHAPE[this.variant()].1.iter().enumerate() {
+        let key = ruby.to_symbol(name);
+        result.aset(key, this.field(ruby, index)?)?;
     }
     Ok(result)
 }
@@ -469,19 +476,22 @@ impl Variants for Value {
         }
     }
 
-    fn values(&self, ruby: &Ruby) -> Result<Vec<RValue>, Error> {
+    fn field(&self, ruby: &Ruby, index: usize) -> Result<RValue, Error> {
+        if index != 0 {
+            return Err(missing_variant_field(ruby, index));
+        }
         Ok(match &self.0 {
-            core::Value::Null => vec![],
-            core::Value::Bool(value) => vec![value.into_value_with(ruby)],
-            core::Value::Int(value) => vec![ruby.integer_from_i64(*value).as_value()],
-            core::Value::Float(value) => vec![ruby.float_from_f64(*value).as_value()],
-            core::Value::String(value) => vec![string(ruby, value).as_value()],
-            core::Value::List(items) => vec![values(ruby, items)?.as_value()],
-            core::Value::Record(fields) => vec![named_values(ruby, fields)?.as_value()],
+            core::Value::Null => return Err(missing_variant_field(ruby, index)),
+            core::Value::Bool(value) => value.into_value_with(ruby),
+            core::Value::Int(value) => ruby.integer_from_i64(*value).as_value(),
+            core::Value::Float(value) => ruby.float_from_f64(*value).as_value(),
+            core::Value::String(value) => string(ruby, value).as_value(),
+            core::Value::List(items) => values(ruby, items)?.as_value(),
+            core::Value::Record(fields) => named_values(ruby, fields)?.as_value(),
         })
     }
 
-    fn build(ruby: &Ruby, variant: usize, fields: Vec<RValue>) -> Result<Self, Error> {
+    fn build(ruby: &Ruby, variant: usize, fields: &[RValue]) -> Result<Self, Error> {
         let field = || fields[0];
         Ok(Self(match variant {
             0 => core::Value::Null,
@@ -548,22 +558,41 @@ fn value_equal_to(ruby: &Ruby, this: &Value, args: &[RValue]) -> Result<bool, Er
 
 #[magnus::wrap(class = "GeniusBench::Record", free_immediately, size)]
 #[derive(Clone)]
-struct Record(Vec<(String, core::Value)>);
-wrapped!(Record, Vec<(String, core::Value)>);
+struct Record(core::Value);
+
+impl Wrapped for Record {
+    type Inner = core::Value;
+
+    fn inner(&self) -> &Self::Inner {
+        &self.0
+    }
+
+    fn inspect_value(&self) -> impl fmt::Debug + '_ {
+        self.fields()
+    }
+}
+
+impl Record {
+    fn fields(&self) -> &[(String, core::Value)] {
+        let core::Value::Record(fields) = &self.0 else {
+            unreachable!("Record holds a core record")
+        };
+        fields
+    }
+}
 
 fn record_new(ruby: &Ruby, args: &[RValue]) -> Result<Obj<Record>, Error> {
     let (fields,): (RValue,) = required(args, &["fields"])?;
-    let mut active = HashSet::new();
-    let fields = named(ruby, fields, |item| convert(ruby, item, &mut active, 1))?;
-    Ok(frozen(ruby, Record(fields)))
+    let fields = host_record(ruby, fields)?;
+    Ok(frozen(ruby, Record(core::Value::Record(fields))))
 }
 
 fn record_fields(ruby: &Ruby, this: &Record) -> Result<RArray, Error> {
-    named_values(ruby, &this.0)
+    named_values(ruby, this.fields())
 }
 
 fn record_to_kernel_value(ruby: &Ruby, this: &Record) -> Obj<Value> {
-    frozen(ruby, Value(core::Value::Record(this.0.clone())))
+    frozen(ruby, Value(this.0.clone()))
 }
 
 #[derive(Clone)]
@@ -596,39 +625,34 @@ impl Variants for Predicate {
         }
     }
 
-    fn values(&self, ruby: &Ruby) -> Result<Vec<RValue>, Error> {
+    fn field(&self, ruby: &Ruby, index: usize) -> Result<RValue, Error> {
+        if index == 0 {
+            if let Some(path) = self.0.path() {
+                return Ok(strings(ruby, path)?.as_value());
+            }
+        }
         let value = |value: &core::Value| frozen(ruby, Value(value.clone())).as_value();
-        Ok(match &self.0 {
-            core::Predicate::Present { path } => vec![strings(ruby, path)?.as_value()],
-            core::Predicate::Equals { path, expected } => {
-                vec![strings(ruby, path)?.as_value(), value(expected)]
+        Ok(match (&self.0, index) {
+            (core::Predicate::Equals { expected, .. }, 1) => value(expected),
+            (core::Predicate::Within { allowed, .. }, 1) => values(ruby, allowed)?.as_value(),
+            (core::Predicate::Contains { item, .. }, 1) => value(item),
+            (core::Predicate::Words { min_words, .. }, 1) => {
+                ruby.integer_from_i64(*min_words).as_value()
             }
-            core::Predicate::Within { path, allowed } => vec![
-                strings(ruby, path)?.as_value(),
-                values(ruby, allowed)?.as_value(),
-            ],
-            core::Predicate::Contains { path, item } => {
-                vec![strings(ruby, path)?.as_value(), value(item)]
+            (core::Predicate::Words { max_words, .. }, 2) => {
+                ruby.integer_from_i64(*max_words).as_value()
             }
-            core::Predicate::Words {
-                path,
-                min_words,
-                max_words,
-            } => vec![
-                strings(ruby, path)?.as_value(),
-                ruby.integer_from_i64(*min_words).as_value(),
-                ruby.integer_from_i64(*max_words).as_value(),
-            ],
-            core::Predicate::All { checks } | core::Predicate::Any { checks } => {
-                vec![predicates(ruby, checks)?.as_value()]
+            (core::Predicate::All { checks } | core::Predicate::Any { checks }, 0) => {
+                predicates(ruby, checks)?.as_value()
             }
-            core::Predicate::Not { check } => {
-                vec![frozen(ruby, Predicate(*check.clone())).as_value()]
+            (core::Predicate::Not { check }, 0) => {
+                frozen(ruby, Predicate(*check.clone())).as_value()
             }
+            _ => return Err(missing_variant_field(ruby, index)),
         })
     }
 
-    fn build(ruby: &Ruby, variant: usize, fields: Vec<RValue>) -> Result<Self, Error> {
+    fn build(ruby: &Ruby, variant: usize, fields: &[RValue]) -> Result<Self, Error> {
         let path = || texts(ruby, fields[0]);
         Ok(Self(match variant {
             0 => core::Predicate::Present { path: path()? },
@@ -716,14 +740,14 @@ impl Variants for Verification {
         }
     }
 
-    fn values(&self, ruby: &Ruby) -> Result<Vec<RValue>, Error> {
-        Ok(match &self.0 {
-            core::Verification::HarnessError { detail } => vec![string(ruby, detail).as_value()],
-            _ => vec![],
-        })
+    fn field(&self, ruby: &Ruby, index: usize) -> Result<RValue, Error> {
+        match (&self.0, index) {
+            (core::Verification::HarnessError { detail }, 0) => Ok(string(ruby, detail).as_value()),
+            _ => Err(missing_variant_field(ruby, index)),
+        }
     }
 
-    fn build(ruby: &Ruby, variant: usize, fields: Vec<RValue>) -> Result<Self, Error> {
+    fn build(ruby: &Ruby, variant: usize, fields: &[RValue]) -> Result<Self, Error> {
         Ok(Self(match variant {
             0 => core::Verification::Unchecked,
             1 => core::Verification::Passed,
@@ -812,28 +836,26 @@ impl Variants for Assessment {
         }
     }
 
-    fn values(&self, ruby: &Ruby) -> Result<Vec<RValue>, Error> {
-        Ok(match &self.0 {
-            core::Assessment::Check {
-                predicate,
-                observation,
-            } => vec![
-                frozen(ruby, Predicate(predicate.clone())).as_value(),
-                frozen(ruby, Value(observation.clone())).as_value(),
-            ],
-            core::Assessment::All { checks } => vec![
-                pairs(
-                    ruby,
-                    checks.iter().map(|(name, check)| {
-                        (name.clone(), frozen(ruby, Assessment(check.clone())))
-                    }),
-                )?
-                .as_value(),
-            ],
+    fn field(&self, ruby: &Ruby, index: usize) -> Result<RValue, Error> {
+        Ok(match (&self.0, index) {
+            (core::Assessment::Check { predicate, .. }, 0) => {
+                frozen(ruby, Predicate(predicate.clone())).as_value()
+            }
+            (core::Assessment::Check { observation, .. }, 1) => {
+                frozen(ruby, Value(observation.clone())).as_value()
+            }
+            (core::Assessment::All { checks }, 0) => pairs(
+                ruby,
+                checks
+                    .iter()
+                    .map(|(name, check)| (name.clone(), frozen(ruby, Assessment(check.clone())))),
+            )?
+            .as_value(),
+            _ => return Err(missing_variant_field(ruby, index)),
         })
     }
 
-    fn build(ruby: &Ruby, variant: usize, fields: Vec<RValue>) -> Result<Self, Error> {
+    fn build(ruby: &Ruby, variant: usize, fields: &[RValue]) -> Result<Self, Error> {
         Ok(Self(match variant {
             0 => core::Assessment::Check {
                 predicate: <&Predicate>::try_convert(fields[0])?.0.clone(),
@@ -1072,19 +1094,22 @@ impl Variants for Criterion {
         }
     }
 
-    fn values(&self, ruby: &Ruby) -> Result<Vec<RValue>, Error> {
-        Ok(vec![match &self.0 {
-            core::Criterion::Code { verifier } => {
+    fn field(&self, ruby: &Ruby, index: usize) -> Result<RValue, Error> {
+        Ok(match (&self.0, index) {
+            (core::Criterion::Code { verifier }, 0) => {
                 frozen(ruby, Verifier(verifier.clone())).as_value()
             }
-            core::Criterion::Answer { rubric } => frozen(ruby, Rubric(rubric.clone())).as_value(),
-            core::Criterion::State { predicate } => {
+            (core::Criterion::Answer { rubric }, 0) => {
+                frozen(ruby, Rubric(rubric.clone())).as_value()
+            }
+            (core::Criterion::State { predicate }, 0) => {
                 frozen(ruby, Predicate(predicate.clone())).as_value()
             }
-        }])
+            _ => return Err(missing_variant_field(ruby, index)),
+        })
     }
 
-    fn build(_ruby: &Ruby, variant: usize, fields: Vec<RValue>) -> Result<Self, Error> {
+    fn build(_ruby: &Ruby, variant: usize, fields: &[RValue]) -> Result<Self, Error> {
         Ok(Self(match variant {
             0 => core::Criterion::Code {
                 verifier: <&Verifier>::try_convert(fields[0])?.0.clone(),

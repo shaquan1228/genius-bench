@@ -107,6 +107,31 @@ RSpec.describe GeniusBench::Record do
     end
   end
 
+  let(:record) { described_class.new(fields: [["x", 1], ["y", 2]]) }
+  let(:equivalent) { described_class.new(fields: [["y", 2], ["x", 1], ["x", 99]]) }
+
+  describe "#==" do
+    subject { record }
+
+    it { is_expected.to eq(equivalent) }
+  end
+
+  describe "#eql?" do
+    subject { record }
+
+    it { is_expected.to eql(equivalent) }
+  end
+
+  describe "#hash" do
+    it "agrees with core record equality" do
+      expect(record.hash).to eq(equivalent.hash)
+    end
+
+    it "deduplicates equivalent records as Hash keys" do
+      expect({record => :first, equivalent => :second}.size).to eq(1)
+    end
+  end
+
   describe "#to_kernel_value" do
     subject { described_class.new(fields: [["x", 1]]).to_kernel_value }
 
