@@ -9,6 +9,15 @@ pub struct Issue {
     pub message: String,
 }
 
+impl Issue {
+    pub(crate) fn new(field: &str, message: &str) -> Self {
+        Self {
+            field: field.into(),
+            message: message.into(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ValidationFailure {
     pub case_id: Option<String>,

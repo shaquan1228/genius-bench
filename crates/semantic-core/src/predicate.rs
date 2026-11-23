@@ -73,19 +73,25 @@ impl Predicate {
             Self::Equals { path, expected } => {
                 observation.get(path).is_some_and(|value| value == expected)
             }
-            Self::Within { path, allowed } => {
-                matches!(observation.get(path), Some(Value::List(items)) if items.iter().all(|value| allowed.contains(value)))
-            }
-            Self::Contains { path, item } => {
-                matches!(observation.get(path), Some(Value::List(items)) if items.contains(item))
-            }
+            Self::Within { path, allowed } => match observation.get(path) {
+                Some(Value::List(items)) => items.iter().all(|value| allowed.contains(value)),
+                _ => false,
+            },
+            Self::Contains { path, item } => match observation.get(path) {
+                Some(Value::List(items)) => items.contains(item),
+                _ => false,
+            },
             Self::Words {
                 path,
                 min_words,
                 max_words,
-            } => {
-                matches!(observation.get(path), Some(Value::String(text)) if (*min_words..=*max_words).contains(&support::word_count(text)))
-            }
+            } => match observation.get(path) {
+                Some(Value::String(text)) => {
+                    let word_count = support::word_count(text);
+                    (*min_words..=*max_words).contains(&word_count)
+                }
+                _ => false,
+            },
             Self::All { checks } => checks.iter().all(|(_, check)| check.holds(observation)),
             Self::Any { checks } => checks.iter().any(|(_, check)| check.holds(observation)),
             Self::Not { check } => !check.holds(observation),

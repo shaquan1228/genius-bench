@@ -10,7 +10,7 @@ SUM_TYPES = {
     "Predicate": "predicate.rs",
     "Verification": "outcome.rs",
     "Assessment": "assessment.rs",
-    "Criterion": "task.rs",
+    "Criterion": "criterion.rs",
 }
 
 

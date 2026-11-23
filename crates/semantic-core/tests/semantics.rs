@@ -241,6 +241,38 @@ fn invalid_generic_declarations_retain_validation_failures() {
             ],
         ),
         (
+            Criterion::Code {
+                verifier: Verifier {
+                    inputs: vec!["missing.txt".into()],
+                    files: vec![File {
+                        path: "missing.txt".into(),
+                        contents: String::new(),
+                    }],
+                    tools: vec![File {
+                        path: "../source.txt".into(),
+                        contents: String::new(),
+                    }],
+                    command: vec![String::new()],
+                    stdin: String::new(),
+                    timeout_seconds: -1,
+                },
+            },
+            vec![
+                (
+                    "verifier.inputs",
+                    "Criteria read files missing from the fixture",
+                ),
+                ("verifier", "Verifier artifacts overlap fixture"),
+                ("verifier", "Overlapping verifier paths"),
+                ("verifier", "Invalid verifier path"),
+                ("verifier.command", "Invalid verifier command"),
+                (
+                    "verifier.timeout_seconds",
+                    "Verifier timeout must be positive",
+                ),
+            ],
+        ),
+        (
             Criterion::Answer {
                 rubric: Rubric {
                     expected: vec![],
@@ -260,6 +292,14 @@ fn invalid_generic_declarations_retain_validation_failures() {
             path: "../source.txt".into(),
             contents: String::new(),
         };
+        let repeated_edit = File {
+            path: "repeat.txt".into(),
+            contents: String::new(),
+        };
+        let outside_edit = File {
+            path: "../outside.txt".into(),
+            contents: String::new(),
+        };
         let failure = Task::new(
             String::new(),
             vec![fixture.clone(), fixture],
@@ -267,12 +307,9 @@ fn invalid_generic_declarations_retain_validation_failures() {
                 prompt: String::new(),
             },
             criterion,
-            vec![],
+            vec!["../allowed.txt".into(), "repeat.txt".into()],
             Reference {
-                edits: vec![File {
-                    path: "outside.txt".into(),
-                    contents: String::new(),
-                }],
+                edits: vec![repeated_edit.clone(), repeated_edit, outside_edit],
                 completion: Value::Null,
             },
         )
@@ -281,6 +318,9 @@ fn invalid_generic_declarations_retain_validation_failures() {
             ("id", "Invalid case identity"),
             ("fixture", "Invalid path"),
             ("fixture", "Duplicate path"),
+            ("allowed_files", "Invalid path"),
+            ("reference.edits", "Invalid path"),
+            ("reference.edits", "Duplicate path"),
             (
                 "reference.edits",
                 "Reference edits files outside allowed_files",
