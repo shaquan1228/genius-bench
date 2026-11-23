@@ -69,6 +69,31 @@ semantics: record equality ignores field order and uses the first field of a
 duplicated name. `Value#equal_to?(other:)` is the explicit semantic alias.
 `equal?` keeps Ruby's identity meaning. Kinds and statuses are frozen strings.
 
+Implement `to_kernel_value` to pass a domain object directly to a typed
+predicate. The method below exposes the order total in integer cents and
+includes a null note.
+
+```ruby
+require "genius_bench"
+
+Order = Data.define(:total_cents) do
+  def to_kernel_value
+    {"total_cents" => total_cents, "note" => nil}
+  end
+end
+
+order = Order.new(total_cents: 4200)
+check = GeniusBench::Predicate::Equals.new(path: ["total_cents"], expected: 4200)
+raise "check failed" unless check.holds?(observation: order)
+
+case check
+in GeniusBench::Predicate::Equals(path:, expected: GeniusBench::Value::Int(value: cents))
+  p [path, cents]
+end
+```
+
+The match prints `[["total_cents"], 4200]`.
+
 ## Errors
 
 `ValidationError` is an `ArgumentError` with `case_id` and frozen `issues`,
