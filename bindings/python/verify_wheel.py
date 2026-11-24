@@ -10,7 +10,7 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[2]
 PACKAGE = ROOT / "bindings/python"
 sys.path.insert(0, str(ROOT / "scripts"))
-from support import run, source_identity  # noqa: E402
+from support import check_grading_example, run, source_identity  # noqa: E402
 
 
 def verify(wheel, python, uv, offline, expected_source_hash=None):
@@ -53,6 +53,10 @@ def verify(wheel, python, uv, offline, expected_source_hash=None):
             [str(installed_python), "-I", "tests/smoke.py"],
             cwd=temporary,
             env=clean,
+        )
+        example = shutil.copy(PACKAGE / "examples/grade_response.py", temporary)
+        check_grading_example(
+            [str(installed_python), "-I", example], cwd=temporary, env=clean
         )
         requirements = temporary / "pylock.toml"
         export = [

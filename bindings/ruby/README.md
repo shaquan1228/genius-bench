@@ -1,162 +1,49 @@
-# Ruby gem
+# Ruby binding
 
-The provisional gem name is `genius-bench-kernel`; its require is
-`genius_bench` and its module is `GeniusBench`. No registry publication is
-configured. Install a built platform gem with
-`gem install path/to/genius-bench-kernel-*.gem`.
+From the repository root, install the built gem for your platform and run the
+[shared grading example](examples/grade_response.rb):
 
-## Getting started
+```sh
+gem install --local path/to/genius-bench-kernel-0.1.0-arm64-darwin.gem
+ruby bindings/ruby/examples/grade_response.rb
+```
+
+Require `genius_bench` to load `GeniusBench`. Platform gems target Ruby 3.2–3.4
+on Linux x86_64 (glibc) and macOS arm64 and install without a Rust compiler.
+The source gem vendors the core and builds with Rust, libclang, and rb_sys.
+
+## Grading a structured answer
+
+For “What is six times seven?”, use this criterion with
+`GeniusBench::Reference.new(edits: [], completion: {"answer" => 42})`.
+The harness supplies a hash in the outcome's `response:` argument:
 
 ```ruby
 require "genius_bench"
 
-task = GeniusBench::Task.new(
-  id: "answer",
-  fixture: [],
-  instruction: GeniusBench::Instruction.new(prompt: "What is six times seven?"),
-  criterion: GeniusBench::Criterion.answer(
-    rubric: GeniusBench::Rubric.new(expected: {answer: 42}, text_rule: nil)
-  ),
-  allowed_files: [],
-  reference: GeniusBench::Reference.new(
-    edits: [], completion: {"answer" => 42}
-  )
+criterion = GeniusBench::Criterion::Answer.new(
+  rubric: GeniusBench::Rubric.new(expected: {answer: 42}, text_rule: nil)
 )
-outcome = GeniusBench::Outcome.new(
-  changed_files: [],
-  verification: GeniusBench::Verification.unchecked,
-  response: {"answer" => 42},
-  facts: {}
-)
-assessment = task.assess(outcome: outcome)
-assessment.passed? # => true
-task.grade(outcome: outcome) # => [["correctness", true], ["scope", true]]
-task.grade_reference(verification: GeniusBench::Verification.unchecked) # => [["correctness", true], ["scope", true]]
 ```
 
-`Criterion.code(verifier:)` declares executable verification;
-`Criterion.state(predicate:)` grades custom state and trace observations. The
-harness executes the verifier and supplies its `Verification` status.
-`REQUIRED_SCORES` and `NESTING_LIMIT` come from the core.
+Value arguments accept Ruby scalars, arrays, hashes, and objects implementing
+`to_kernel_value`. `GeniusBench.from_struct` adapts Struct and Data instances.
+A `GeniusBench::Record` preserves duplicate field names. The
+[installed-gem test](spec/smoke.rb) shows a Data adapter and pattern matching.
 
-`Task#grade_reference(verification:)` grades the reference edits and
-completion after the harness supplies a verification status.
+`ValidationError` extends `ArgumentError` with `case_id` and frozen `issues`.
+`GradingError` extends `RuntimeError` and preserves the harness diagnostic.
+The gem includes [RBS declarations](sig/genius_bench.rbs).
+`GeniusBench.version` and `GeniusBench.source_hash` identify the installed core.
 
-## Values
-
-Every value parameter accepts native Ruby values and converts them to an
-immutable kernel `Value`: `Reference.new(completion:)`,
-`Rubric.new(expected:)`, `Predicate.equals`, `Predicate.within`,
-`Predicate.contains`, `Predicate#holds?`, `Outcome.new(response:, facts:)`,
-`Assessment.new(observation:)`, and `Value#equal_to?(other:)`. Existing
-`Value` instances pass through unchanged. `Value.from_ruby(value:)` performs
-the same conversion when a host needs the kernel `Value` itself. Conversion
-accepts nil, booleans, 64-bit integers, floats, UTF-8-compatible strings,
-arrays, hashes with String or Symbol names, native values, and objects
-responding to `to_kernel_value`. Names must be distinct after Symbol conversion.
-Integers and strings are not coerced through `to_int` or `to_str`. Cycles and
-nesting beyond `NESTING_LIMIT` raise `ArgumentError`; unsupported objects raise
-`TypeError`.
-
-`Record.new(fields:)` keeps duplicate names. `GeniusBench.from_struct(value:)`
-projects `Struct` and `Data` instances, including nested ones.
-
-Named collections (`fields`, `checks`, `facts`, `expected`) accept a Hash or an
-Array of `[name, value]` pairs.
-
-Every native object is frozen. `==`, `eql?`, and `hash` follow the core's
-semantics: record equality ignores field order and uses the first field of a
-duplicated name. `Value#equal_to?(other:)` is the explicit semantic alias.
-`equal?` keeps Ruby's identity meaning. Kinds and statuses are frozen strings.
-
-Implement `to_kernel_value` to pass a domain object directly to a typed
-predicate. The method below exposes the order total in integer cents and
-includes a null note.
-
-```ruby
-require "genius_bench"
-
-Order = Data.define(:total_cents) do
-  def to_kernel_value
-    {"total_cents" => total_cents, "note" => nil}
-  end
-end
-
-order = Order.new(total_cents: 4200)
-check = GeniusBench::Predicate::Equals.new(path: ["total_cents"], expected: 4200)
-raise "check failed" unless check.holds?(observation: order)
-
-case check
-in GeniusBench::Predicate::Equals(path:, expected: GeniusBench::Value::Int(value: cents))
-  p [path, cents]
-end
-```
-
-The match prints `[["total_cents"], 4200]`.
-
-## Errors
-
-`ValidationError` is an `ArgumentError` with `case_id` and frozen `issues`,
-each an `Issue` with `field` and `message`. `GradingError` is a `RuntimeError`
-with `failure` and `detail`. Candidate failure, invalid submission, timeout,
-and harness failure keep distinct verification statuses.
-
-## Types
-
-`sig/genius_bench.rbs` declares the public surface. The gate validates it and
-runs the suite a second time with `rbs/test` hooks installed on every class, so
-each declared argument and return type is checked against the extension.
-
-## Supported platforms
-
-Platform gems install and grade without Rust. CI cross-compiles them with
-rb-sys-dock and installs each one on the matching runner across Ruby 3.2, 3.3,
-and 3.4:
-
-| Platform | Gem platform | Compiled Ruby ABIs | Installed on |
-| --- | --- | --- | --- |
-| Linux x86_64, glibc | x86_64-linux | 3.2, 3.3, 3.4 | ubuntu-24.04 |
-| macOS arm64 | arm64-darwin | 3.2, 3.3, 3.4 | macos-14 |
-
-The minimum glibc and macOS versions are those of the rb-sys-dock images for
-rb_sys 0.9.130; the install matrix is the verified floor. Other Rubies, musl
-Linux, and other architectures install from the source gem, which vendors the
-semantic core and needs Rust, libclang, and rb_sys at install time.
-
-`GeniusBench.version` and `GeniusBench.source_hash` report the installed core's
-identity.
-
-## Development
-
-Install Ruby 3.3 from `.tool-versions` and Rust from `rust-toolchain.toml`,
-then:
+## Building gems
 
 ```sh
 bundle install --gemfile bindings/ruby/Gemfile
 cd bindings/ruby
-bundle exec rake compile spec
-bundle exec standardrb
-bundle exec rbs -I sig validate
-RBS_TEST=1 bundle exec rspec --tag '~contract'
 bundle exec rake gem:source
 bundle exec rake native gem
 ```
 
-A local `rake native gem` names the platform gem after the host, for example
-`genius-bench-kernel-0.1.0-arm64-darwin-25.gem`; CI names cross-compiled gems
-`arm64-darwin` and `x86_64-linux`. The extension crate is its own cargo
-workspace under `bindings/ruby`, so core and Python checks need neither Ruby
-nor libclang.
-
-`make check` at the repository root runs all of the above after the core and
-Python checks, then installs the source and host platform gems into an
-isolated gem home and grades with no compiler on the subprocess `PATH`. Verify
-a built gem on its own with:
-
-```sh
-python3 bindings/ruby/verify_gem.py --gem pkg/genius-bench-kernel-0.1.0-arm64-darwin-25.gem --native
-```
-
-See the [repository overview](../../README.md),
-[contributor rules](../../CONTRIBUTING.md), and the
-[changelog](../../CHANGELOG.md).
+For the language comparison and the full build and verification commands, see
+the [repository README](../../README.md).

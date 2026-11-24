@@ -1,0 +1,16 @@
+[workspace]
+resolver = "3"
+
+[package]
+name = "genius-bench-go"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+publish = false
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+semantic-core = { path = "../../../crates/semantic-core" }
