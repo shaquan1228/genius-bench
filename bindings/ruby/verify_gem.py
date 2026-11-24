@@ -10,7 +10,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[2]
 PACKAGE = ROOT / "bindings/ruby"
 sys.path.insert(0, str(ROOT / "scripts"))
-from support import run, source_identity  # noqa: E402
+from support import check_grading_example, run, source_identity  # noqa: E402
 
 
 def gem_files(gem):
@@ -110,6 +110,8 @@ def verify(gem, ruby, bundle, native, expected_source_hash=None):
         clean["KERNEL_SOURCE_HASH"] = expected_source_hash or source_identity()
         clean["KERNEL_COMPILER_FREE"] = "1"
         run([ruby, "spec/smoke.rb"], cwd=temporary, env=clean)
+        example = shutil.copy(PACKAGE / "examples/grade_response.rb", temporary)
+        check_grading_example([ruby, example], cwd=temporary, env=clean)
         run([ruby, str(home / "bin/rspec"), "spec"], cwd=temporary, env=clean)
         print(
             f"Installed {'native' if native else 'source'} gem: boundary, identity, and signature checks passed.",

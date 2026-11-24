@@ -1,79 +1,35 @@
 # Go binding
 
-Declare a task with an instruction, criterion, allowed files, and reference.
-`NewTask` validates the declaration and takes a snapshot of it. Construct an
-outcome to grade an observed run, or call `task.GradeReference` to grade the
-task's reference with a verification result.
+The [shared grading example](examples/grade_response/main.go) constructs a
+validated task and grades an outcome through cgo. The binding supports state
+tasks with a presence predicate and boolean or null values. Use
+`task.GradeReference(bench.Unchecked())` to grade the task's stored reference.
+Use `errors.As` with `*bench.ValidationError` or `*bench.GradingError` to
+inspect declaration issues and verifier harness failures.
 
-The Go proof supports the state criterion and presence predicate. Responses,
-reference completions, and facts can hold boolean or null values.
+## Run the example
 
-From a source checkout with Go 1.22 or newer, the repository's Rust toolchain,
-and a C compiler installed, run:
-
-```sh
-cargo fetch --locked --manifest-path bindings/go/native/Cargo.toml
-make check-go
-```
-
-To use the package from another local Go module on macOS or Linux, run the
-following from that module with `BENCH` set to the absolute path to this
-checkout:
+Install Go 1.22+, the repository's Rust toolchain, and a C compiler. From the
+repository root, build the native archive and run the example:
 
 ```sh
-cargo build --manifest-path "$BENCH/bindings/go/native/Cargo.toml" --locked --release \
-  --target-dir "$BENCH/target"
-go mod edit -require=github.com/shaquan1228/genius-bench/bindings/go@v0.0.0
-go mod edit "-replace=github.com/shaquan1228/genius-bench/bindings/go=$BENCH/bindings/go"
+export BENCH="$(pwd)"
+cargo build --locked --release --manifest-path bindings/go/native/Cargo.toml \
+    --target-dir "$BENCH/target"
 export CGO_ENABLED=1
 export CGO_LDFLAGS="\"-L$BENCH/target/release\""
+go -C bindings/go run -a ./examples/grade_response
 ```
 
-Save this as `main.go` and run `go run -a .`:
+After rebuilding the archive, `-a` forces Go to relink with the new native
+code. To import the binding from another local module, keep these environment
+variables and run the following in that module:
 
-```go
-package main
-
-import (
-	"fmt"
-	"log"
-
-	bench "github.com/shaquan1228/genius-bench/bindings/go"
-)
-
-func main() {
-	task, err := bench.NewTask(bench.TaskSpec{
-		ID:          "installed",
-		Instruction: bench.Instruction{Prompt: "observe"},
-		Criterion:   bench.State{Predicate: bench.Present{Path: []string{"response"}}},
-		Reference:   bench.Reference{Completion: bench.Bool(true)},
-	})
-	if err != nil {
-		log.Fatal(err)
-	}
-	outcome, err := bench.NewOutcome(bench.OutcomeSpec{
-		Verification: bench.Unchecked(),
-		Response:     bench.Bool(true),
-	})
-	if err != nil {
-		log.Fatal(err)
-	}
-	scores, err := task.Grade(outcome)
-	if err != nil {
-		log.Fatal(err)
-	}
-	for _, score := range scores {
-		fmt.Println(score.Name, score.Passed)
-	}
-}
+```sh
+go mod edit -require=github.com/shaquan1228/genius-bench/bindings/go@v0.0.0
+go mod edit "-replace=github.com/shaquan1228/genius-bench/bindings/go=$BENCH/bindings/go"
 ```
 
-The output is `correctness true` followed by `scope true`. Adding
-`ChangedFiles: []string{"extra.txt"}` to the outcome declaration changes
-the second score to `false`. Calling `task.GradeReference(bench.Unchecked())` grades the
-reference completion and edits from the original declaration. Use
-`errors.As` with `*bench.ValidationError` for declaration issues or
-`*bench.GradingError` for a verification harness failure.
-
-After changing the Rust library, rebuild the archive and run `go build -a` or
-`go test -a` to refresh Go’s cached native link.
+`make check-go` builds and tests the binding from the repository root after
+`cargo fetch --locked --manifest-path bindings/go/native/Cargo.toml`. See the
+[repository README](../../README.md) for the other language examples.

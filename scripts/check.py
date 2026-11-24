@@ -92,6 +92,8 @@ def check_pushed_tips(tips, cargo):
 
 
 def check(cargo, uv, python, bundle, ruby):
+    from support import check_grading_example
+
     commands = [
         [sys.executable, "-m", "unittest", "discover", "-s", "scripts/tests"],
         [cargo, "test", "--locked", "--offline", "-p", "semantic-core"],
@@ -150,6 +152,20 @@ def check(cargo, uv, python, bundle, ruby):
     for command in commands:
         print("+ " + " ".join(command), flush=True)
         subprocess.run(command, cwd=ROOT, env=environment, check=True)
+
+    check_grading_example(
+        [
+            cargo,
+            "run",
+            "--locked",
+            "--offline",
+            "-p",
+            "semantic-core",
+            "--example",
+            "grade_response",
+        ],
+        env=environment,
+    )
 
 
 def main():

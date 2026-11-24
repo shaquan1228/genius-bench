@@ -2,10 +2,13 @@ import argparse
 import os
 from pathlib import Path
 import subprocess
+import sys
 
 
 ROOT = Path(__file__).resolve().parents[2]
 PACKAGE = ROOT / "bindings/go"
+sys.path.insert(0, str(ROOT / "scripts"))
+from support import check_grading_example  # noqa: E402
 
 
 def main():
@@ -34,6 +37,10 @@ def main():
         cwd=PACKAGE,
         env=environment,
         check=True,
+    )
+
+    check_grading_example(
+        ["go", "run", "-a", "./examples/grade_response"], cwd=PACKAGE, env=environment
     )
 
 

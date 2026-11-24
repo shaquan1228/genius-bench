@@ -19,6 +19,12 @@ def run(command, *, cwd=ROOT, env=None, capture=False, check=True):
     return result
 
 
+def check_grading_example(command, *, cwd=ROOT, env=None):
+    result = run(command, cwd=cwd, env=env, capture=True)
+    if result.stdout.splitlines() != ["correctness true", "scope false"]:
+        raise RuntimeError(f"Unexpected grading example output: {result.stdout!r}")
+
+
 def source_identity(core=None):
     core = core or ROOT / "crates/semantic-core"
     build = (core / "build.rs").read_text()
