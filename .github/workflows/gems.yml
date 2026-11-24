@@ -44,7 +44,7 @@ jobs:
         platform:
           - os: ubuntu-24.04
             label: x86_64-linux
-          - os: macos-14
+          - os: macos-15
             label: arm64-darwin
     runs-on: ${{ matrix.platform.os }}
     steps:
