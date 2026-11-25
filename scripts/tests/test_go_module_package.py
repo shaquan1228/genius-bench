@@ -112,3 +112,22 @@ class GoModulePackageTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("expected tested commit", result.stderr)
         self.assertEqual(self.git(f"--git-dir={remote}", "tag", "--list"), "")
+
+    def test_package_accepts_module_and_bundle_paths_starting_with_dash(self):
+        module = self.root / "-module"
+        module.mkdir()
+        (module / "go.mod").write_text("module example.org/kernel\n")
+        self.git("add", "--", "-module/go.mod")
+        self.git("commit", "--quiet", "-m", "Add another module")
+        for platform in ("linux_amd64", "darwin_arm64"):
+            (module / f"libgenius_bench_go_{platform}.a").write_bytes(b"archive")
+        result = subprocess.run(
+            ["bash", str(SCRIPT), module.name, VERSION, "-go.bundle"],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        tag = f"refs/tags/{module.name}/{VERSION}"
+        self.git("fetch", "--quiet", str(self.root / "-go.bundle"), f"{tag}:{tag}")
+        self.assertEqual(self.git("rev-parse", tag), result.stdout.strip())

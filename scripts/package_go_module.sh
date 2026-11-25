@@ -10,8 +10,8 @@ add_archives() {
             printf 'Missing or empty Go archive: %s\n' "$archive" >&2
             exit 1
         fi
-        cp "$root/$archive" "$archive"
-        chmod 644 "$archive"
+        cp -- "$root/$archive" "$archive"
+        chmod -- 644 "$archive"
         git add -f -- "$archive"
     done
 }
@@ -21,9 +21,9 @@ create_or_reuse_tag() {
     local parents
 
     if [[ -n "$release_tag" ]] && git show-ref --verify --quiet "$tag"; then
-        parents=$(git show -s --format=%P "$tag^{commit}")
+        parents=$(git show -s --format=%P "$tag^{commit}" --)
         if [[ "$parents" != "$release_commit" ]] ||
-            ! git diff --cached --quiet "$tag^{tree}"; then
+            ! git diff --cached --quiet "$tag^{tree}" --; then
             printf '%s differs from the release commit and its two built archives\n' \
                 "$tag" >&2
             exit 1
@@ -51,7 +51,7 @@ main() (
     fi
 
     root=$(git rev-parse --show-toplevel)
-    release_commit=$(git rev-parse HEAD)
+    release_commit=$(git rev-parse --verify 'HEAD^{commit}')
     tag="refs/tags/$module/$version"
     git check-ref-format "$tag"
     if [[ "$bundle" != /* ]]; then
@@ -67,7 +67,7 @@ main() (
     add_archives "$root" "$module"
     create_or_reuse_tag "$tag" "$version" "$release_commit" "$release_tag"
     git bundle create "$bundle" "$tag" "^$release_commit"
-    git rev-parse "$tag"
+    git rev-parse --verify "$tag^{commit}"
 )
 
 main "$@"

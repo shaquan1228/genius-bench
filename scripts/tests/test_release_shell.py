@@ -89,7 +89,7 @@ class ReleaseShellTests(unittest.TestCase):
         (self.pending / "unrelated.txt").write_text("not a package")
         result = self.run_script("publish_release.sh", "rubygems", self.pending)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual([args for _, args in self.commands()], [["push", str(gem)]])
+        self.assertEqual([args for _, args in self.commands()], [["push", "--", str(gem)]])
 
     def test_gem_publication_rejects_an_empty_directory(self):
         result = self.run_script("publish_release.sh", "rubygems", self.pending)
@@ -155,3 +155,34 @@ class ReleaseShellTests(unittest.TestCase):
         result = self.run_script("stage_release.sh", "pypi")
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(output.read_text(), "")
+
+    def test_relative_script_ignores_cdpath_when_finding_repository(self):
+        (self.root / "scripts").mkdir()
+        self.environment["CDPATH"] = str(self.root)
+        self.tool(
+            "cargo",
+            "if sys.argv[1] == 'init':\n"
+            "    Path('src').mkdir()\n"
+            "if sys.argv[1] == 'run':\n"
+            "    print('correctness true\\nscope false')\n",
+        )
+        result = subprocess.run(
+            ["bash", "scripts/verify_install.sh", "rust", "0.1.0"],
+            cwd=SCRIPTS.parent,
+            env=self.environment,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_gem_publication_accepts_a_relative_directory_starting_with_dash(self):
+        directory = self.root / "-pending gems"
+        directory.mkdir()
+        (directory / "native.gem").write_bytes(b"gem")
+        self.tool("gem", "")
+        result = self.run_script("publish_release.sh", "rubygems", directory.name)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            [args for _, args in self.commands()],
+            [["push", "--", "-pending gems/native.gem"]],
+        )

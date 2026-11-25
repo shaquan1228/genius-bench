@@ -36,6 +36,7 @@ find_package() {
         ruby)
             printf '%s\n' "$directory"
             ;;
+        *) usage ;;
     esac
 }
 
@@ -105,7 +106,7 @@ verify_ruby() {
 
 main() (
     local repository language version package='' consumer tag
-    repository=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+    repository=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
 
     if [[ ${1:-} == --local ]]; then
         [[ $# -eq 3 ]] || usage

@@ -24,8 +24,8 @@ fetch_module() {
     local bundle=$1 ref=$2 expected_object=$3
     local actual_object
 
-    git fetch --no-tags "$bundle" "+$ref:$ref"
-    actual_object=$(git rev-parse "$ref")
+    git fetch --no-tags -- "$bundle" "+$ref:$ref"
+    actual_object=$(git rev-parse --verify "$ref^{commit}")
     if [[ "$actual_object" != "$expected_object" ]]; then
         printf 'Bundled module resolves to %s; expected tested commit %s\n' \
             "$actual_object" "$expected_object" >&2

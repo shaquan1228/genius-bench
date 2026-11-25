@@ -36,7 +36,7 @@ publish_gems() {
     fi
 
     for gem in "${gems[@]}"; do
-        gem push "$gem"
+        gem push -- "$gem"
     done
 }
 
