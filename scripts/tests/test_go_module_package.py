@@ -110,4 +110,5 @@ class GoModulePackageTests(unittest.TestCase):
         self.package()
         result, remote = self.publish(self.release)
         self.assertNotEqual(result.returncode, 0)
+        self.assertIn("expected tested commit", result.stderr)
         self.assertEqual(self.git(f"--git-dir={remote}", "tag", "--list"), "")

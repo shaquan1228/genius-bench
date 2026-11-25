@@ -20,7 +20,7 @@ jobs:
       - name: Grade from the packaged crate
         env:
           RUSTUP_TOOLCHAIN: 1.85.0
-        run: bash scripts/update_rust_crate.sh verify
+        run: bash scripts/verify_install.sh --local rust target/package
       - uses: actions/upload-artifact@v4
         with:
           name: rust-crate
@@ -32,6 +32,8 @@ jobs:
     needs: package
     runs-on: ubuntu-24.04
     environment: crates-io
+    env:
+      HAS_BOOTSTRAP_TOKEN: ${{ secrets.CRATES_IO_BOOTSTRAP_TOKEN != '' }}
     permissions:
       contents: read
       id-token: write
@@ -47,20 +49,11 @@ jobs:
       - name: Check the tested crate against crates.io
         id: pending
         run: bash scripts/stage_release.sh crates-io
-      - name: Confirm Cargo reproduces the tested archive
-        if: steps.pending.outputs.publish == 'true'
-        run: bash scripts/update_rust_crate.sh reproduce
-      - name: Check crate bootstrap configuration
-        if: steps.pending.outputs.publish == 'true'
-        id: bootstrap
-        env:
-          CRATES_IO_BOOTSTRAP_TOKEN: ${{ secrets.CRATES_IO_BOOTSTRAP_TOKEN }}
-        run: bash scripts/update_rust_crate.sh bootstrap
       - uses: rust-lang/crates-io-auth-action@3268eb413133e2960fa4ae0e963ca76380c54cd9
-        if: steps.pending.outputs.publish == 'true' && steps.bootstrap.outputs.enabled != 'true'
+        if: steps.pending.outputs.publish == 'true' && env.HAS_BOOTSTRAP_TOKEN != 'true'
         id: auth
       - if: steps.pending.outputs.publish == 'true'
-        run: cargo publish --locked --no-verify --package genius-bench-kernel
+        run: bash scripts/publish_release.sh crates-io
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token || secrets.CRATES_IO_BOOTSTRAP_TOKEN }}
 

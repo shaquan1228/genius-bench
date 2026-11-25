@@ -70,7 +70,7 @@ jobs:
         run: uv run --no-project --python "${{ matrix.python }}" python bindings/python/verify_wheel.py --wheel dist/*.whl
       - name: Install the wheel in a fresh pip project
         if: matrix.python == '3.12'
-        run: uv run --no-project --python 3.12 bash scripts/verify_python_install.sh
+        run: uv run --no-project --python 3.12 bash scripts/verify_install.sh --local python dist
 
   source:
     runs-on: ubuntu-24.04

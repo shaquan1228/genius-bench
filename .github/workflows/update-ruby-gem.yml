@@ -69,7 +69,7 @@ jobs:
           name: ruby-source
           path: pkg
       - name: Resolve both gems in a fresh Bundler project
-        run: bash scripts/update_ruby_gem.sh verify
+        run: bash scripts/verify_install.sh --local ruby pkg
 
   source:
     runs-on: ubuntu-24.04
@@ -126,7 +126,7 @@ jobs:
           owner: ${{ vars.RUBYGEMS_OWNER_ID }}
       - name: Upload missing gems
         if: steps.pending.outputs.publish == 'true'
-        run: bash scripts/update_ruby_gem.sh publish
+        run: bash scripts/publish_release.sh rubygems
 
   published-install:
     needs: publish
