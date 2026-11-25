@@ -6,7 +6,9 @@ that core through native bindings.
 
 ## Install
 
-Add Genius Bench to an existing project with your language's package manager.
+After the first registry release, add Genius Bench to an existing project with
+your language's package manager. To try it from this checkout, run the
+[development checks](#development).
 
 | Language | Command | Import |
 | --- | --- | --- |
@@ -15,10 +17,9 @@ Add Genius Bench to an existing project with your language's package manager.
 | Ruby | `bundle add genius-bench-kernel` | `require "genius_bench"` |
 | Go | `go get github.com/shaquan1228/genius-bench/bindings/go/genius-bench-kernel` | `bench "github.com/shaquan1228/genius-bench/bindings/go/genius-bench-kernel"` |
 
-The commands resolve published versions. Python and Ruby have prebuilt packages
-for Linux x86_64 and macOS arm64. Go uses cgo and a C toolchain with a bundled
-Rust archive on Linux amd64 with glibc 2.35 or newer and on macOS arm64.
-See the language guides for runtime versions and source builds.
+The Rust crate requires Rust 1.85 or later. The Python and Ruby guides below
+list the interpreter and system versions supported by the prebuilt packages.
+Go requires cgo and a C toolchain to link the bundled Rust archive.
 
 ## Grade the same task in four languages
 
@@ -53,7 +54,8 @@ returns a structured error so the caller can distinguish it from a failed score.
 A public case contains the identity, prompt, and public files, including any
 explicitly public tools. The task retains the reference answer, private checks,
 and verifier input. The [Genius eval library](https://github.com/shaquan1228/genius)
-owns execution, verification environments, and evidence collection. The [release guide](RELEASING.md) covers package publication.
+owns execution, verification environments, and evidence collection. See the
+[release guide](RELEASING.md) for package publication.
 
 ## Development
 

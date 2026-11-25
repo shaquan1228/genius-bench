@@ -5,7 +5,24 @@ and Go module. Update the workspace version in `Cargo.toml`, Python's
 `bindings/python/pyproject.toml`, and Ruby's
 `bindings/ruby/lib/genius_bench/version.rb`. Update the lockfiles and changelog
 with the version change. Run `make check` and confirm the package workflows on
-the candidate commit.
+the candidate commit. The current Go module path supports stable v0 and v1
+releases. A v2 release needs a matching major-version suffix in the module path
+and consumer imports.
+
+## Try a package before publishing
+
+From the repository root, run the same consumer check as the Rust package job.
+
+```sh
+version=$(python3 scripts/release_version.py)
+cargo package --locked --package genius-bench-kernel
+bash scripts/verify_install.sh rust "${version#v}" "target/package/genius-bench-kernel-${version#v}"
+```
+
+The script creates a temporary project, installs the package, and runs the
+language's grading example. Pass `python` with a wheel file or `ruby` with a
+directory of candidate gems to exercise the same check through pip or Bundler.
+Omit the last argument to test an exact version from its public registry.
 
 ## Registry setup
 
@@ -43,6 +60,14 @@ adds the tested Rust archives. This keeps the archives out of `main` and
 lets Go fetch the complete package from the tagged tree.
 
 Confirm the published install jobs across the four workflows. Rerun failed
-jobs from the original workflow run to retain its built artifacts. To adopt the
-Python release in Genius evals, use an exact version in its lockfile and run the
-no-model smoke. Preserve grading build identity in the resulting evidence.
+jobs from the original workflow run to retain its built artifacts. For Cargo,
+PyPI, and RubyGems, the publish job compares SHA-256 checksums and uploads
+missing artifacts. On a checksum conflict, compare the original build artifacts
+with the registry before attempting another release. The Go job checks the
+existing module tag's full tree and parent against the release and its two
+archives.
+
+To adopt the Python release in Genius evals, pin its version in the lockfile and
+run the no-model smoke. Record the version and source hash from the installed
+core. The hash includes the core manifest, which package managers can rewrite
+during packaging.

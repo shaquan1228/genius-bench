@@ -9,6 +9,17 @@ bundle add genius-bench-kernel
 bundle exec ruby grade_response.rb
 ```
 
+The platform gems cover CRuby 3.2 through 3.4 on Linux x86_64 with glibc
+2.30 or later and Apple silicon on macOS 11 or later. For older glibc,
+set `force_ruby_platform: true` on the Gemfile entry and run `bundle install`.
+The source gem requires Rust, a C compiler, and libclang.
+
+## Grading a structured answer
+
+For “What is six times seven?”, use this criterion with
+`GeniusBench::Reference.new(edits: [], completion: {"answer" => 42})`.
+Supply the candidate's hash in the outcome's `response:` argument.
+
 ```ruby
 require "genius_bench"
 
@@ -26,10 +37,6 @@ A `GeniusBench::Record` preserves duplicate field names. The
 `GradingError` extends `RuntimeError` and preserves the harness diagnostic.
 The gem includes [RBS declarations](sig/genius_bench.rbs).
 `GeniusBench.version` and `GeniusBench.source_hash` identify the installed core.
-
-Bundler selects the platform gem for Ruby 3.2 through 3.4 on Linux x86_64 with
-glibc and on macOS arm64. The source gem requires Rust, a C compiler, and
-libclang.
 
 ## Building gems
 

@@ -8,6 +8,17 @@ python -m pip install genius-bench-kernel
 python grade_response.py
 ```
 
+The release workflow tests wheels on GIL-enabled CPython 3.12 through 3.14.
+They target Linux x86_64 with glibc 2.28 or later and Apple silicon on macOS
+11 or later. Installing from the source distribution requires Rust and a C
+linker.
+
+## Grading a structured answer
+
+For “What is six times seven?”, use this criterion with
+`Reference(edits=[], completion={"answer": 42})`. Supply the candidate's
+dictionary in `Outcome.response`.
+
 ```python
 from kernel import Criterion, Rubric
 
@@ -24,10 +35,6 @@ order adapter, pattern matching, and the distinction between missing and null.
 `GradingError` extends `RuntimeError` and preserves the harness diagnostic.
 The wheel includes [type declarations](python/kernel/__init__.pyi) and
 `py.typed`. `kernel.version()` and `kernel.source_hash()` identify the installed core.
-
-The release wheels support CPython 3.12 through 3.14 on Linux x86_64 with
-glibc 2.28 or newer and on macOS arm64. Installing from the source distribution
-requires a Rust toolchain and C linker.
 
 ## Building a wheel
 

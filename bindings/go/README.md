@@ -9,7 +9,8 @@ inspect declaration issues and verifier harness failures.
 ## Install
 
 Use Go 1.22 or later and a C compiler on Linux amd64 with glibc 2.35 or later,
-or on macOS arm64. The module ships the Rust archive for both targets.
+or on Apple silicon with macOS 11 or later. The module ships the Rust archive for
+both targets.
 In a Go project, add the dependency, save the
 [shared grading example](genius-bench-kernel/examples/grade_response/main.go)
 as `main.go`, and run it.
