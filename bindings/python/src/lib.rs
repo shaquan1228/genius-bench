@@ -1,10 +1,10 @@
+use genius_bench_kernel as core;
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::{
     PyAttributeError, PyOverflowError, PyRuntimeError, PyTypeError, PyValueError,
 };
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyList, PyString, PyTuple};
-use semantic_core as core;
 use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
 

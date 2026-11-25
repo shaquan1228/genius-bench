@@ -63,8 +63,8 @@ def check_stage(stage):
     staged_manifest = tomllib.loads(
         (stage / "ext/semantic_ruby/Cargo.toml").read_text()
     )
-    core_path = staged_manifest["dependencies"]["semantic-core"].pop("path")
-    manifest["dependencies"]["semantic-core"].pop("path")
+    core_path = staged_manifest["dependencies"]["genius-bench-kernel"].pop("path")
+    manifest["dependencies"]["genius-bench-kernel"].pop("path")
     if (stage / "ext/semantic_ruby" / core_path).resolve() != staged_core.resolve():
         raise RuntimeError("Source gem extension does not depend on the staged core")
     if staged_manifest != manifest:

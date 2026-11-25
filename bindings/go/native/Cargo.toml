@@ -13,4 +13,4 @@ publish = false
 crate-type = ["staticlib"]
 
 [dependencies]
-semantic-core = { path = "../../../crates/semantic-core" }
+genius-bench-kernel = { path = "../../../crates/semantic-core" }

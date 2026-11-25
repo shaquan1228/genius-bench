@@ -1,17 +1,17 @@
 # Python binding
 
-From the repository root, install a built wheel into your Python environment and
-run the [shared grading example](examples/grade_response.py):
+Install from PyPI with pip in your project's environment, then save and run the
+[shared grading example](examples/grade_response.py).
 
 ```sh
-python -m pip install path/to/genius_bench_kernel-*.whl
-python bindings/python/examples/grade_response.py
+python -m pip install genius-bench-kernel
+python grade_response.py
 ```
 
-The package imports as `kernel`. Wheels target GIL-enabled CPython 3.12+ on
-Linux x86_64 (glibc 2.28+) and macOS arm64 (macOS 11+), with install checks
-for CPython 3.12–3.14. Wheel users need no Rust compiler. Source builds use Rust
-and maturin.
+The release workflow tests wheels on GIL-enabled CPython 3.12 through 3.14.
+They target Linux x86_64 with glibc 2.28 or later and Apple silicon on macOS
+11 or later. Installing from the source distribution requires Rust and a C
+linker.
 
 ## Grading a structured answer
 

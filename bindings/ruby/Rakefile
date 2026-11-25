@@ -17,7 +17,7 @@ end
 RbSys::ExtensionTask.new("semantic-ruby", GEMSPEC) do |ext|
   ext.lib_dir = "lib/genius_bench"
   ext.cross_compile = true
-  ext.cross_platform = %w[arm64-darwin x86_64-linux]
+  ext.cross_platform = %w[arm64-darwin x86_64-linux-gnu]
 end
 
 RSpec::Core::RakeTask.new(:spec)

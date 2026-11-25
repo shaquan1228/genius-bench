@@ -1,4 +1,4 @@
-use semantic_core::{
+use genius_bench_kernel::{
     Criterion, Instruction, Outcome, Predicate, Reference, Task, Value, Verification,
 };
 

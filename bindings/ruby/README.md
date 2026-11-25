@@ -1,16 +1,18 @@
 # Ruby binding
 
-From the repository root, install the built gem for your platform and run the
-[shared grading example](examples/grade_response.rb):
+Add the gem to your Bundler project, then save and run the
+[shared grading example](examples/grade_response.rb). In a new project, run
+`bundle init` first.
 
 ```sh
-gem install --local path/to/genius-bench-kernel-0.1.0-arm64-darwin.gem
-ruby bindings/ruby/examples/grade_response.rb
+bundle add genius-bench-kernel
+bundle exec ruby grade_response.rb
 ```
 
-Require `genius_bench` to load `GeniusBench`. Platform gems target Ruby 3.2–3.4
-on Linux x86_64 (glibc) and macOS arm64 and install without a Rust compiler.
-The source gem vendors the core and builds with Rust, libclang, and rb_sys.
+The platform gems cover CRuby 3.2 through 3.4 on Linux x86_64 with glibc
+2.30 or later and Apple silicon on macOS 11 or later. For older glibc,
+set `force_ruby_platform: true` on the Gemfile entry and run `bundle install`.
+The source gem requires Rust, a C compiler, and libclang.
 
 ## Grading a structured answer
 

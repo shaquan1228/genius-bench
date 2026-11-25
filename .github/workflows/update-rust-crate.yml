@@ -1,0 +1,67 @@
+name: Update Rust crate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: cargo package --locked --package genius-bench-kernel
+      - run: rustup toolchain install 1.85.0 --profile minimal
+      - name: Grade from the packaged crate
+        env:
+          RUSTUP_TOOLCHAIN: 1.85.0
+        run: bash scripts/verify_install.sh --local rust target/package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rust-crate
+          path: target/package/*.crate
+          if-no-files-found: error
+
+  publish:
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs: package
+    runs-on: ubuntu-24.04
+    environment: crates-io
+    env:
+      HAS_BOOTSTRAP_TOKEN: ${{ secrets.CRATES_IO_BOOTSTRAP_TOKEN != '' }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: python3 scripts/release_version.py "$GITHUB_REF_NAME"
+      - uses: actions/download-artifact@v4
+        with:
+          name: rust-crate
+          path: dist
+      - name: Check the tested crate against crates.io
+        id: pending
+        run: bash scripts/stage_release.sh crates-io
+      - uses: rust-lang/crates-io-auth-action@3268eb413133e2960fa4ae0e963ca76380c54cd9
+        if: steps.pending.outputs.publish == 'true' && env.HAS_BOOTSTRAP_TOKEN != 'true'
+        id: auth
+      - if: steps.pending.outputs.publish == 'true'
+        run: bash scripts/publish_release.sh crates-io
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token || secrets.CRATES_IO_BOOTSTRAP_TOKEN }}
+
+  published-install:
+    needs: publish
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: bash scripts/verify_install.sh rust "${GITHUB_REF_NAME#v}"

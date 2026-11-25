@@ -6,7 +6,8 @@ import sys
 
 
 ROOT = Path(__file__).resolve().parents[2]
-PACKAGE = ROOT / "bindings/go"
+BINDING = ROOT / "bindings/go"
+PACKAGE = BINDING / "genius-bench-kernel"
 sys.path.insert(0, str(ROOT / "scripts"))
 from support import check_grading_example  # noqa: E402
 
@@ -18,7 +19,7 @@ def main():
     parser.add_argument("--cargo", default=os.environ.get("CARGO", "cargo"))
     args = parser.parse_args()
     target = (ROOT / os.environ.get("CARGO_TARGET_DIR", "target")).resolve()
-    manifest = ["--manifest-path", str(PACKAGE / "native/Cargo.toml")]
+    manifest = ["--manifest-path", str(BINDING / "native/Cargo.toml")]
     build = ["--locked", "--offline", "--target-dir", str(target), *manifest]
     for command in [
         ["fmt", *manifest, "--", "--check"],
@@ -32,15 +33,18 @@ def main():
     environment["CGO_LDFLAGS"] = (
         f"{search} {environment.get('CGO_LDFLAGS', '')}".strip()
     )
+    go_flags = ["-tags", "genius_bench_source", "-a"]
     subprocess.run(
-        ["go", "test", "-a", "-count=1", "./..."],
+        ["go", "test", *go_flags, "-count=1", "./..."],
         cwd=PACKAGE,
         env=environment,
         check=True,
     )
 
     check_grading_example(
-        ["go", "run", "-a", "./examples/grade_response"], cwd=PACKAGE, env=environment
+        ["go", "run", *go_flags, "./examples/grade_response"],
+        cwd=PACKAGE,
+        env=environment,
     )
 
 

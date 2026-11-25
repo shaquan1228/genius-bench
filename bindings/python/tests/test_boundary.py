@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from importlib.metadata import version
 import importlib.util
 from pathlib import Path
 import struct
@@ -29,9 +30,7 @@ def test_native_identity_and_packaged_types():
     assert k.ValidationError.__module__ == "kernel._native"
     assert k.GradingError.__module__ == "kernel._native"
     assert importlib.util.find_spec("kernel._native").origin.endswith((".so", ".pyd"))
-    from importlib.metadata import version
-
-    assert k.version() == version("genius-bench-kernel") == "0.1.0"
+    assert k.version() == version("genius-bench-kernel")
     assert len(k.source_hash()) == 64
     assert k.REQUIRED_SCORES == ("correctness", "scope")
     package = Path(k.__file__).parent

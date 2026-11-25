@@ -1,0 +1,145 @@
+name: Update Ruby gem
+
+on:
+  pull_request:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: x86_64-linux-gnu
+            target: x86_64-unknown-linux-gnu
+          - platform: arm64-darwin
+            target: aarch64-apple-darwin
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+          working-directory: bindings/ruby
+      - uses: oxidize-rb/actions/cross-gem@v1
+        id: cross-gem
+        with:
+          platform: ${{ matrix.platform }}
+          ruby-versions: "3.2,3.3,3.4"
+          working-directory: bindings/ruby
+          pre-script: rustup target add ${{ matrix.target }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gem-${{ matrix.platform }}
+          path: ${{ steps.cross-gem.outputs.gem-path }}
+          if-no-files-found: error
+  install:
+    needs: [build, source]
+    strategy:
+      fail-fast: false
+      matrix:
+        ruby: ["3.2", "3.3", "3.4"]
+        platform:
+          - os: ubuntu-24.04
+            label: x86_64-linux-gnu
+          - os: macos-15
+            label: arm64-darwin
+    runs-on: ${{ matrix.platform.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ matrix.ruby }}
+          bundler-cache: true
+          working-directory: bindings/ruby
+      - uses: actions/download-artifact@v4
+        with:
+          name: gem-${{ matrix.platform.label }}
+          path: pkg
+      - run: python3 bindings/ruby/verify_gem.py --gem pkg/*.gem --native
+      - uses: actions/download-artifact@v4
+        with:
+          name: ruby-source
+          path: pkg
+      - name: Resolve both gems in a fresh Bundler project
+        run: bash scripts/verify_install.sh --local ruby pkg
+
+  source:
+    runs-on: ubuntu-24.04
+    env:
+      CARGO_BUILD_JOBS: 2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+          bundler-cache: true
+          working-directory: bindings/ruby
+      - run: cargo fetch --locked --manifest-path bindings/ruby/Cargo.toml
+      - run: bundle exec rake gem:source
+        working-directory: bindings/ruby
+      - run: python3 bindings/ruby/verify_gem.py --gem bindings/ruby/pkg/*.gem
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ruby-source
+          path: bindings/ruby/pkg/*.gem
+          if-no-files-found: error
+
+  publish:
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs: [install, source]
+    runs-on: ubuntu-24.04
+    environment: rubygems
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: python3 scripts/release_version.py "$GITHUB_REF_NAME"
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+      - uses: actions/download-artifact@v4
+        with:
+          name: ruby-source
+          path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: gem-*
+          path: dist
+          merge-multiple: true
+      - name: Check the source and platform gems against RubyGems.org
+        id: pending
+        run: bash scripts/stage_release.sh rubygems
+      - uses: rubygems/configure-rubygems-credentials@c6ca7f4bac0e29c9bde8eeae0a0a986b27efa05f
+        if: steps.pending.outputs.publish == 'true'
+        with:
+          owner: ${{ vars.RUBYGEMS_OWNER_ID }}
+      - name: Upload missing gems
+        if: steps.pending.outputs.publish == 'true'
+        run: bash scripts/publish_release.sh rubygems
+
+  published-install:
+    needs: publish
+    strategy:
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+      - name: Grade from RubyGems.org with Bundler
+        run: bash scripts/verify_install.sh ruby "${GITHUB_REF_NAME#v}"

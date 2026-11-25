@@ -96,7 +96,7 @@ def check(cargo, uv, python, bundle, ruby):
 
     commands = [
         [sys.executable, "-m", "unittest", "discover", "-s", "scripts/tests"],
-        [cargo, "test", "--locked", "--offline", "-p", "semantic-core"],
+        [cargo, "test", "--locked", "--offline", "-p", "genius-bench-kernel"],
         [cargo, "fmt", "--all", "--", "--check"],
         [
             cargo,
@@ -160,7 +160,7 @@ def check(cargo, uv, python, bundle, ruby):
             "--locked",
             "--offline",
             "-p",
-            "semantic-core",
+            "genius-bench-kernel",
             "--example",
             "grade_response",
         ],

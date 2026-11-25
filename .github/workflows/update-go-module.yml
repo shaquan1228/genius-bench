@@ -1,0 +1,125 @@
+name: Update Go module
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  MODULE_PATH: bindings/go/genius-bench-kernel
+
+jobs:
+  archive:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            platform: linux_amd64
+          - os: macos-15
+            platform: darwin_arm64
+    runs-on: ${{ matrix.os }}
+    env:
+      MACOSX_DEPLOYMENT_TARGET: '11.0'
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash scripts/update_go_module.sh archive
+        env:
+          PLATFORM: ${{ matrix.platform }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: go-archive-${{ matrix.platform }}
+          path: libgenius_bench_go_*.a
+          if-no-files-found: error
+
+  module:
+    needs: archive
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.package.outputs.version }}
+      object: ${{ steps.package.outputs.object }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: go-archive-*
+          path: bindings/go/genius-bench-kernel
+          merge-multiple: true
+      - name: Package the tagged Go module
+        id: package
+        env:
+          RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+        run: bash scripts/update_go_module.sh package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: go-module
+          path: ${{ runner.temp }}/go.bundle
+          if-no-files-found: error
+
+  install:
+    needs: module
+    strategy:
+      matrix:
+        os: [ubuntu-22.04, macos-15]
+    runs-on: ${{ matrix.os }}
+    env:
+      VERSION: ${{ needs.module.outputs.version }}
+      MODULE_OBJECT: ${{ needs.module.outputs.object }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: bindings/go/genius-bench-kernel/go.mod
+          cache: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: go-module
+          path: ${{ runner.temp }}
+      - run: bash scripts/update_go_module.sh install
+
+  publish:
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs: [module, install]
+    runs-on: ubuntu-24.04
+    environment: go-release
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.module.outputs.version }}
+      MODULE_OBJECT: ${{ needs.module.outputs.object }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: go-module
+          path: ${{ runner.temp }}
+      - run: bash scripts/update_go_module.sh publish
+
+  published-install:
+    needs: [module, publish]
+    strategy:
+      matrix:
+        os: [ubuntu-22.04, macos-15]
+    runs-on: ${{ matrix.os }}
+    env:
+      VERSION: ${{ needs.module.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: bindings/go/genius-bench-kernel/go.mod
+          cache: false
+      - run: python3 bindings/go/verify_module.py "$VERSION"
