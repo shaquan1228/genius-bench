@@ -1,4 +1,4 @@
-name: Core and binding checks
+name: Check core and bindings
 
 on: [push, pull_request]
 

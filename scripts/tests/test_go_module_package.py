@@ -1,3 +1,4 @@
+import os
 import subprocess
 import tempfile
 import unittest
@@ -79,3 +80,34 @@ class GoModulePackageTests(unittest.TestCase):
         failed = self.package(VERSION, check=False)
         self.assertNotEqual(failed.returncode, 0)
         self.assertIn("differs", failed.stderr)
+
+    def publish(self, expected):
+        remote = self.root.parent / "origin.git"
+        subprocess.run(["git", "init", "--bare", "--quiet", str(remote)], check=True)
+        self.git("remote", "add", "origin", str(remote))
+        result = subprocess.run(
+            ["bash", str(SCRIPT.with_name("update_go_module.sh")), "publish"],
+            cwd=self.root,
+            env={
+                **os.environ,
+                "MODULE_PATH": MODULE,
+                "VERSION": VERSION,
+                "MODULE_OBJECT": expected,
+                "RUNNER_TEMP": str(self.bundle.parent),
+            },
+            text=True,
+            capture_output=True,
+        )
+        return result, remote
+
+    def test_publish_pushes_the_tested_object_from_the_bundle(self):
+        commit = self.package().stdout.strip()
+        result, remote = self.publish(commit)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.git(f"--git-dir={remote}", "rev-parse", TAG), commit)
+
+    def test_publish_rejects_an_object_other_than_the_tested_object(self):
+        self.package()
+        result, remote = self.publish(self.release)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.git(f"--git-dir={remote}", "tag", "--list"), "")

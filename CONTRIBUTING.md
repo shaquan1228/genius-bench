@@ -55,3 +55,11 @@
     `expect` syntax with `subject` and `let`, keep isolated examples to one
     expectation, cover valid, edge, and invalid inputs, prefer readable
     matchers, and mock sparingly.
+
+## Release preparation
+
+Update the version in `Cargo.toml`, `bindings/python/pyproject.toml`, and
+`bindings/ruby/lib/genius_bench/version.rb` together with the lockfiles and
+changelog. Run `make check` and confirm the package workflows pass on the
+candidate commit. The current Go module path supports stable v0 and v1
+releases; v2 requires a major-version suffix in the module path and imports.

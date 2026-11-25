@@ -16,8 +16,8 @@ linker.
 ## Grading a structured answer
 
 For “What is six times seven?”, use this criterion with
-`Reference(edits=[], completion={"answer": 42})`. Supply the candidate's
-dictionary in `Outcome.response`.
+`Reference(edits=[], completion={"answer": 42})`. The harness supplies a
+dictionary in `Outcome.response`:
 
 ```python
 from kernel import Criterion, Rubric

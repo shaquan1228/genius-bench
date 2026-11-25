@@ -1,4 +1,4 @@
-name: Python wheels
+name: Update Python package
 
 on:
   pull_request:
@@ -70,9 +70,7 @@ jobs:
         run: uv run --no-project --python "${{ matrix.python }}" python bindings/python/verify_wheel.py --wheel dist/*.whl
       - name: Install the wheel in a fresh pip project
         if: matrix.python == '3.12'
-        run: |
-          version=$(uv run --no-project --python 3.12 scripts/release_version.py)
-          uv run --no-project --python 3.12 bash scripts/verify_install.sh python "${version#v}" dist/*.whl
+        run: uv run --no-project --python 3.12 bash scripts/verify_python_install.sh
 
   source:
     runs-on: ubuntu-24.04
@@ -118,9 +116,7 @@ jobs:
           path: dist
       - name: Check which artifacts still need publishing
         id: pending
-        run: |
-          pending=$(python3 scripts/stage_release.py pypi "${GITHUB_REF_NAME#v}" dist pending)
-          echo "publish=$pending" >> "$GITHUB_OUTPUT"
+        run: bash scripts/stage_release.sh pypi
       - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086
         if: steps.pending.outputs.publish == 'true'
         with:

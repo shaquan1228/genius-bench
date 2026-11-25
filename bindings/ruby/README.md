@@ -18,7 +18,7 @@ The source gem requires Rust, a C compiler, and libclang.
 
 For “What is six times seven?”, use this criterion with
 `GeniusBench::Reference.new(edits: [], completion: {"answer" => 42})`.
-Supply the candidate's hash in the outcome's `response:` argument.
+The harness supplies a hash in the outcome's `response:` argument:
 
 ```ruby
 require "genius_bench"

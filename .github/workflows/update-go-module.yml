@@ -1,4 +1,4 @@
-name: Go module
+name: Update Go module
 
 on:
   pull_request:
@@ -27,9 +27,7 @@ jobs:
       MACOSX_DEPLOYMENT_TARGET: '11.0'
     steps:
       - uses: actions/checkout@v4
-      - run: |
-          cargo build --locked --release --manifest-path bindings/go/native/Cargo.toml --target-dir target
-          mv target/release/libgenius_bench_go.a "libgenius_bench_go_${PLATFORM}.a"
+      - run: bash scripts/update_go_module.sh archive
         env:
           PLATFORM: ${{ matrix.platform }}
       - uses: actions/upload-artifact@v4
@@ -57,11 +55,7 @@ jobs:
         id: package
         env:
           RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
-        run: |
-          version=$(python3 scripts/release_version.py)
-          object=$(bash scripts/package_go_module.sh "$MODULE_PATH" "$version" "$RUNNER_TEMP/go.bundle" "$RELEASE_TAG")
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "object=$object" >> "$GITHUB_OUTPUT"
+        run: bash scripts/update_go_module.sh package
       - uses: actions/upload-artifact@v4
         with:
           name: go-module
@@ -90,11 +84,7 @@ jobs:
         with:
           name: go-module
           path: ${{ runner.temp }}
-      - run: |
-          ref="refs/tags/$MODULE_PATH/$VERSION"
-          git fetch --no-tags "$RUNNER_TEMP/go.bundle" "+$ref:$ref"
-          test "$(git rev-parse "$ref")" = "$MODULE_OBJECT"
-          python3 bindings/go/verify_module.py "$VERSION" --repository "$PWD"
+      - run: bash scripts/update_go_module.sh install
 
   publish:
     if: github.event_name == 'push' && github.ref_type == 'tag'
@@ -114,11 +104,7 @@ jobs:
         with:
           name: go-module
           path: ${{ runner.temp }}
-      - run: |
-          ref="refs/tags/$MODULE_PATH/$VERSION"
-          git fetch --no-tags "$RUNNER_TEMP/go.bundle" "$ref"
-          test "$(git rev-parse FETCH_HEAD)" = "$MODULE_OBJECT"
-          git push origin "$MODULE_OBJECT:$ref"
+      - run: bash scripts/update_go_module.sh publish
 
   published-install:
     needs: [module, publish]

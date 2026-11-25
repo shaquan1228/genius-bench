@@ -17,11 +17,12 @@ your language's package manager. To try it from this checkout, run the
 | Ruby | `bundle add genius-bench-kernel` | `require "genius_bench"` |
 | Go | `go get github.com/shaquan1228/genius-bench/bindings/go/genius-bench-kernel` | `bench "github.com/shaquan1228/genius-bench/bindings/go/genius-bench-kernel"` |
 
-The Rust crate requires Rust 1.85 or later. The Python and Ruby guides below
-list the interpreter and system versions supported by the prebuilt packages.
+The Rust crate requires Rust 1.85 or later. The [Python](bindings/python/README.md)
+and [Ruby](bindings/ruby/README.md) guides list the interpreter and system
+versions supported by the prebuilt packages.
 Go requires cgo and a C toolchain to link the bundled Rust archive.
 
-## Grade the same task in four languages
+## Supported Languages
 
 The task asks, “Respond without editing files.” Its criterion checks for a
 response, and its list of allowed files is empty. The candidate responds
@@ -36,12 +37,12 @@ scope false
 The response satisfies the presence predicate. The file edit fails the scope
 check. Follow a language link to run the complete example.
 
-| Language and example | Grade the outcome | Supported criteria | How to use it |
-| --- | --- | --- | --- |
-| [Rust core](crates/semantic-core/examples/grade_response.rs) | `task.grade(&outcome)` | State predicates, answer rubrics, code verifiers | Use the example as `src/main.rs` in a Cargo project. |
-| [Python](bindings/python/examples/grade_response.py) | `task.grade(outcome=outcome)` | State predicates, answer rubrics, code verifiers | [Install with pip](bindings/python/README.md) and import `kernel`. |
-| [Ruby](bindings/ruby/examples/grade_response.rb) | `task.grade(outcome: outcome)` | State predicates, answer rubrics, code verifiers | [Install with Bundler](bindings/ruby/README.md) and require `genius_bench`. |
-| [Go](bindings/go/genius-bench-kernel/examples/grade_response/main.go) | `task.Grade(outcome)` | State tasks with a presence predicate and boolean or null values | [Add the Go module with cgo enabled](bindings/go/README.md). |
+| Language and example | Grade the outcome | Supported criteria |
+| --- | --- | --- |
+| [Rust core](crates/semantic-core/examples/grade_response.rs) | `task.grade(&outcome)` | State predicates, answer rubrics, code verifiers |
+| [Python](bindings/python/examples/grade_response.py) | `task.grade(outcome=outcome)` | State predicates, answer rubrics, code verifiers |
+| [Ruby](bindings/ruby/examples/grade_response.rb) | `task.grade(outcome: outcome)` | State predicates, answer rubrics, code verifiers |
+| [Go](bindings/go/genius-bench-kernel/examples/grade_response/main.go) | `task.Grade(outcome)` | State tasks with a presence predicate and boolean or null values |
 
 ## What the core grades
 
@@ -54,8 +55,7 @@ returns a structured error so the caller can distinguish it from a failed score.
 A public case contains the identity, prompt, and public files, including any
 explicitly public tools. The task retains the reference answer, private checks,
 and verifier input. The [Genius eval library](https://github.com/shaquan1228/genius)
-owns execution, verification environments, and evidence collection. See the
-[release guide](RELEASING.md) for package publication.
+owns execution, verification environments, and evidence collection.
 
 ## Development
 

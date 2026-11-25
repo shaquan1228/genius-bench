@@ -1,8 +1,9 @@
 # Go binding
 
-The bindings use the Genius Bench Rust core through cgo. They support state
+The [shared grading example](genius-bench-kernel/examples/grade_response/main.go) constructs a
+validated task and grades an outcome through cgo. The binding supports state
 tasks with a presence predicate and boolean or null values. Use
-`task.GradeReference(bench.Unchecked())` to grade a task's stored reference.
+`task.GradeReference(bench.Unchecked())` to grade the task's stored reference.
 Use `errors.As` with `*bench.ValidationError` or `*bench.GradingError` to
 inspect declaration issues and verifier harness failures.
 

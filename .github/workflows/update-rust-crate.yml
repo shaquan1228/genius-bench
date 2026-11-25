@@ -1,4 +1,4 @@
-name: Rust crate
+name: Update Rust crate
 
 on:
   pull_request:
@@ -20,10 +20,7 @@ jobs:
       - name: Grade from the packaged crate
         env:
           RUSTUP_TOOLCHAIN: 1.85.0
-        run: |
-          version=$(python3 scripts/release_version.py)
-          crate="$PWD/target/package/genius-bench-kernel-${version#v}"
-          bash scripts/verify_install.sh rust "${version#v}" "$crate"
+        run: bash scripts/update_rust_crate.sh verify
       - uses: actions/upload-artifact@v4
         with:
           name: rust-crate
@@ -49,23 +46,16 @@ jobs:
           path: dist
       - name: Check the tested crate against crates.io
         id: pending
-        run: |
-          publish=$(python3 scripts/stage_release.py crates-io "${GITHUB_REF_NAME#v}" dist pending)
-          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+        run: bash scripts/stage_release.sh crates-io
       - name: Confirm Cargo reproduces the tested archive
         if: steps.pending.outputs.publish == 'true'
-        run: |
-          cargo package --locked --no-verify --package genius-bench-kernel
-          cmp pending/*.crate target/package/*.crate
+        run: bash scripts/update_rust_crate.sh reproduce
       - name: Check crate bootstrap configuration
         if: steps.pending.outputs.publish == 'true'
         id: bootstrap
         env:
           CRATES_IO_BOOTSTRAP_TOKEN: ${{ secrets.CRATES_IO_BOOTSTRAP_TOKEN }}
-        run: |
-          if [[ -n "$CRATES_IO_BOOTSTRAP_TOKEN" ]]; then
-            echo "enabled=true" >> "$GITHUB_OUTPUT"
-          fi
+        run: bash scripts/update_rust_crate.sh bootstrap
       - uses: rust-lang/crates-io-auth-action@3268eb413133e2960fa4ae0e963ca76380c54cd9
         if: steps.pending.outputs.publish == 'true' && steps.bootstrap.outputs.enabled != 'true'
         id: auth
