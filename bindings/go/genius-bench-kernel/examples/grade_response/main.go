@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"log"
 
-	bench "github.com/shaquan1228/genius-bench/bindings/go"
+	bench "github.com/shaquan1228/genius-bench/bindings/go/genius-bench-kernel"
 )
 
 func main() {

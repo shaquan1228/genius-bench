@@ -15,7 +15,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version-file: bindings/go/go.mod
+          go-version-file: bindings/go/genius-bench-kernel/go.mod
           cache: false
       - uses: astral-sh/setup-uv@v7
         with:

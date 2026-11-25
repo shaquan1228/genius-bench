@@ -1,6 +1,8 @@
 package bench
 
-// #cgo LDFLAGS: -lgenius_bench_go
+// #cgo genius_bench_source LDFLAGS: -lgenius_bench_go
+// #cgo linux,amd64,!genius_bench_source LDFLAGS: ${SRCDIR}/libgenius_bench_go_linux_amd64.a
+// #cgo darwin,arm64,!genius_bench_source LDFLAGS: ${SRCDIR}/libgenius_bench_go_darwin_arm64.a
 // #cgo linux LDFLAGS: -ldl -lpthread -lm
 // #cgo darwin LDFLAGS: -liconv
 // #include "grade.h"

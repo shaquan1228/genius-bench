@@ -1,6 +1,6 @@
 [package]
 name = "semantic-python"
-description = "Native Python boundary for semantic-core"
+description = "Native Python boundary for Genius Bench"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -12,5 +12,5 @@ name = "_native"
 crate-type = ["cdylib"]
 
 [dependencies]
-semantic-core = { path = "../../crates/semantic-core" }
+genius-bench-kernel = { path = "../../crates/semantic-core" }
 pyo3 = { version = "=0.29.3", features = ["abi3-py312"] }

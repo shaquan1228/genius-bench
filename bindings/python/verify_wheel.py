@@ -26,7 +26,11 @@ def verify(wheel, python, uv, offline, expected_source_hash=None):
     with tempfile.TemporaryDirectory(prefix="kernel-wheel-") as directory:
         temporary = Path(directory)
         environment = temporary / "environment"
-        run([uv, "venv", str(environment), "--python", python], cwd=temporary)
+        if "/" not in python:
+            python = run(
+                [uv, "python", "find", python], cwd=temporary, capture=True
+            ).stdout.strip()
+        run([python, "-m", "venv", str(environment)], cwd=temporary)
         installed_python = environment / "bin/python"
         install = [uv, "pip", "install", "--python", str(installed_python)]
         if offline:
@@ -48,7 +52,20 @@ def verify(wheel, python, uv, offline, expected_source_hash=None):
         clean["KERNEL_SOURCE_HASH"] = expected_source_hash or source_identity()
         clean["KERNEL_COMPILER_FREE"] = "1"
         clean["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
-        run([*install, str(wheel)], cwd=temporary)
+        run(
+            [
+                str(installed_python),
+                "-I",
+                "-m",
+                "pip",
+                "install",
+                "--no-index",
+                "--no-deps",
+                str(wheel),
+            ],
+            cwd=temporary,
+            env=clean,
+        )
         run(
             [str(installed_python), "-I", "tests/smoke.py"],
             cwd=temporary,

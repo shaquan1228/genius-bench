@@ -1,35 +1,35 @@
 # Go binding
 
-The [shared grading example](examples/grade_response/main.go) constructs a
-validated task and grades an outcome through cgo. The binding supports state
+The bindings use the Genius Bench Rust core through cgo. They support state
 tasks with a presence predicate and boolean or null values. Use
-`task.GradeReference(bench.Unchecked())` to grade the task's stored reference.
+`task.GradeReference(bench.Unchecked())` to grade a task's stored reference.
 Use `errors.As` with `*bench.ValidationError` or `*bench.GradingError` to
 inspect declaration issues and verifier harness failures.
 
-## Run the example
+## Install
 
-Install Go 1.22+, the repository's Rust toolchain, and a C compiler. From the
-repository root, build the native archive and run the example:
-
-```sh
-export BENCH="$(pwd)"
-cargo build --locked --release --manifest-path bindings/go/native/Cargo.toml \
-    --target-dir "$BENCH/target"
-export CGO_ENABLED=1
-export CGO_LDFLAGS="\"-L$BENCH/target/release\""
-go -C bindings/go run -a ./examples/grade_response
-```
-
-After rebuilding the archive, `-a` forces Go to relink with the new native
-code. To import the binding from another local module, keep these environment
-variables and run the following in that module:
+Use Go 1.22 or later and a C compiler on Linux amd64 with glibc 2.35 or later,
+or on macOS arm64. The module ships the Rust archive for both targets.
+In a Go project, add the dependency, save the
+[shared grading example](genius-bench-kernel/examples/grade_response/main.go)
+as `main.go`, and run it.
 
 ```sh
-go mod edit -require=github.com/shaquan1228/genius-bench/bindings/go@v0.0.0
-go mod edit "-replace=github.com/shaquan1228/genius-bench/bindings/go=$BENCH/bindings/go"
+go get github.com/shaquan1228/genius-bench/bindings/go/genius-bench-kernel
+go run .
 ```
 
-`make check-go` builds and tests the binding from the repository root after
-`cargo fetch --locked --manifest-path bindings/go/native/Cargo.toml`. See the
-[repository README](../../README.md) for the other language examples.
+In a new project, run `go mod init example.com/benchmark` first. The imported
+package name is `bench`.
+
+## Build from source
+
+Install the repository's Rust toolchain in addition to Go and a C compiler.
+From the Genius Bench checkout, run:
+
+```sh
+cargo fetch --locked --manifest-path bindings/go/native/Cargo.toml
+make check-go
+```
+
+The check builds the Rust archive, runs the binding tests, and runs the example.

@@ -1,23 +1,12 @@
 # Python binding
 
-From the repository root, install a built wheel into your Python environment and
-run the [shared grading example](examples/grade_response.py):
+Install from PyPI with pip in your project's environment, then save and run the
+[shared grading example](examples/grade_response.py).
 
 ```sh
-python -m pip install path/to/genius_bench_kernel-*.whl
-python bindings/python/examples/grade_response.py
+python -m pip install genius-bench-kernel
+python grade_response.py
 ```
-
-The package imports as `kernel`. Wheels target GIL-enabled CPython 3.12+ on
-Linux x86_64 (glibc 2.28+) and macOS arm64 (macOS 11+), with install checks
-for CPython 3.12–3.14. Wheel users need no Rust compiler. Source builds use Rust
-and maturin.
-
-## Grading a structured answer
-
-For “What is six times seven?”, use this criterion with
-`Reference(edits=[], completion={"answer": 42})`. The harness supplies a
-dictionary in `Outcome.response`:
 
 ```python
 from kernel import Criterion, Rubric
@@ -35,6 +24,10 @@ order adapter, pattern matching, and the distinction between missing and null.
 `GradingError` extends `RuntimeError` and preserves the harness diagnostic.
 The wheel includes [type declarations](python/kernel/__init__.pyi) and
 `py.typed`. `kernel.version()` and `kernel.source_hash()` identify the installed core.
+
+The release wheels support CPython 3.12 through 3.14 on Linux x86_64 with
+glibc 2.28 or newer and on macOS arm64. Installing from the source distribution
+requires a Rust toolchain and C linker.
 
 ## Building a wheel
 

@@ -1,4 +1,4 @@
-use semantic_core::{
+use genius_bench_kernel::{
     Assessment, Case, Criterion, File, GradingFailure, Instruction, NESTING_LIMIT, Outcome,
     Predicate, REQUIRED_SCORES, Reference, Rubric, SOURCE_HASH, Task, VERSION, Value, Verification,
     Verifier,
@@ -492,8 +492,8 @@ fn integer_domain_retains_i64_boundaries() {
 fn compiled_identity_is_stable_and_changes_with_each_source_input() {
     let original = Path::new(env!("CARGO_MANIFEST_DIR"));
     assert_eq!(build_identity::source_hash(original).unwrap(), SOURCE_HASH);
-    assert_eq!(semantic_core::source_hash(), SOURCE_HASH);
-    assert_eq!(semantic_core::version(), VERSION);
+    assert_eq!(genius_bench_kernel::source_hash(), SOURCE_HASH);
+    assert_eq!(genius_bench_kernel::version(), VERSION);
     assert_eq!(SOURCE_HASH.len(), 64);
     let nonce = SystemTime::now()
         .duration_since(UNIX_EPOCH)

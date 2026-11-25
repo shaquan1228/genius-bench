@@ -1,3 +1,4 @@
+use genius_bench_kernel as core;
 use magnus::rb_sys::AsRawValue;
 use magnus::scan_args::{ScanArgsRequired, get_kwargs, scan_args};
 use magnus::typed_data::Obj;
@@ -7,7 +8,6 @@ use magnus::{
     RHash, RModule, RObject, RString, Ruby, Symbol, TryConvert, TypedData, Value as RValue,
     function, method, prelude::*, r_hash::ForEach,
 };
-use semantic_core as core;
 use std::collections::HashSet;
 use std::fmt;
 use std::hash::{DefaultHasher, Hash, Hasher};

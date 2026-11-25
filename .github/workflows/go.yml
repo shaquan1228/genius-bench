@@ -1,0 +1,150 @@
+name: Go module
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  MODULE_PATH: bindings/go/genius-bench-kernel
+
+jobs:
+  archive:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            platform: linux_amd64
+          - os: macos-15
+            platform: darwin_arm64
+    runs-on: ${{ matrix.os }}
+    env:
+      MACOSX_DEPLOYMENT_TARGET: '11.0'
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          cargo build --locked --release --manifest-path bindings/go/native/Cargo.toml --target-dir target
+          mv target/release/libgenius_bench_go.a "libgenius_bench_go_${PLATFORM}.a"
+        env:
+          PLATFORM: ${{ matrix.platform }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: go-archive-${{ matrix.platform }}
+          path: libgenius_bench_go_*.a
+          if-no-files-found: error
+
+  module:
+    needs: archive
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.package.outputs.version }}
+      commit: ${{ steps.package.outputs.commit }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: go-archive-*
+          path: bindings/go/genius-bench-kernel
+          merge-multiple: true
+      - name: Package the tagged Go module
+        id: package
+        run: |
+          version=$(python3 scripts/release_version.py)
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            python3 scripts/release_version.py "$GITHUB_REF_NAME"
+          fi
+          test -s "$MODULE_PATH/libgenius_bench_go_linux_amd64.a"
+          test -s "$MODULE_PATH/libgenius_bench_go_darwin_arm64.a"
+          release_commit=$(git rev-parse HEAD)
+          tag="$MODULE_PATH/$version"
+          if [[ "$GITHUB_REF_TYPE" == tag ]] && git show-ref --verify --quiet "refs/tags/$tag"; then
+            test "$(git rev-parse "$tag^")" = "$release_commit"
+          else
+            git add -f "$MODULE_PATH"/libgenius_bench_go_*.a
+            git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -m "Package Genius Bench Go module $version"
+            git tag -f "$tag"
+          fi
+          git bundle create "$RUNNER_TEMP/go.bundle" "$tag" "^$release_commit"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "commit=$(git rev-parse "$tag")" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: go-module
+          path: ${{ runner.temp }}/go.bundle
+          if-no-files-found: error
+
+  install:
+    needs: module
+    strategy:
+      matrix:
+        os: [ubuntu-22.04, macos-15]
+    runs-on: ${{ matrix.os }}
+    env:
+      VERSION: ${{ needs.module.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: bindings/go/genius-bench-kernel/go.mod
+          cache: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: go-module
+          path: ${{ runner.temp }}
+      - run: |
+          git fetch "$RUNNER_TEMP/go.bundle" "+refs/tags/$MODULE_PATH/$VERSION:refs/tags/$MODULE_PATH/$VERSION"
+          python3 bindings/go/verify_module.py "$VERSION" --repository "$PWD"
+
+  publish:
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs: [module, install]
+    runs-on: ubuntu-24.04
+    environment: go-release
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.module.outputs.version }}
+      MODULE_COMMIT: ${{ needs.module.outputs.commit }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: go-module
+          path: ${{ runner.temp }}
+      - run: |
+          ref="refs/tags/$MODULE_PATH/$VERSION"
+          if git show-ref --verify --quiet "$ref"; then
+            test "$(git rev-parse "$ref")" = "$MODULE_COMMIT"
+          else
+            git fetch "$RUNNER_TEMP/go.bundle" "$ref:$ref"
+            git push origin "$ref"
+          fi
+  published-install:
+    needs: [module, publish]
+    strategy:
+      matrix:
+        os: [ubuntu-22.04, macos-15]
+    runs-on: ${{ matrix.os }}
+    env:
+      VERSION: ${{ needs.module.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: bindings/go/genius-bench-kernel/go.mod
+          cache: false
+      - run: python3 bindings/go/verify_module.py "$VERSION"

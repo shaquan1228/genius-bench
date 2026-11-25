@@ -11,7 +11,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: x86_64-linux
+          - platform: x86_64-linux-gnu
             target: x86_64-unknown-linux-gnu
           - platform: arm64-darwin
             target: aarch64-apple-darwin
@@ -43,7 +43,7 @@ jobs:
         ruby: ["3.2", "3.3", "3.4"]
         platform:
           - os: ubuntu-24.04
-            label: x86_64-linux
+            label: x86_64-linux-gnu
           - os: macos-15
             label: arm64-darwin
     runs-on: ${{ matrix.platform.os }}
@@ -59,3 +59,88 @@ jobs:
           name: gem-${{ matrix.platform.label }}
           path: pkg
       - run: python3 bindings/ruby/verify_gem.py --gem pkg/*.gem --native
+
+  source:
+    runs-on: ubuntu-24.04
+    env:
+      CARGO_BUILD_JOBS: 2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+          bundler-cache: true
+          working-directory: bindings/ruby
+      - run: cargo fetch --locked --manifest-path bindings/ruby/Cargo.toml
+      - run: bundle exec rake gem:source
+        working-directory: bindings/ruby
+      - run: python3 bindings/ruby/verify_gem.py --gem bindings/ruby/pkg/*.gem
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ruby-source
+          path: bindings/ruby/pkg/*.gem
+          if-no-files-found: error
+
+  publish:
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs: [install, source]
+    runs-on: ubuntu-24.04
+    environment: rubygems
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: python3 scripts/release_version.py "$GITHUB_REF_NAME"
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+      - uses: actions/download-artifact@v4
+        with:
+          name: ruby-source
+          path: source
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: gem-*
+          path: native
+          merge-multiple: true
+      - uses: rubygems/configure-rubygems-credentials@c6ca7f4bac0e29c9bde8eeae0a0a986b27efa05f
+        with:
+          owner: ${{ vars.RUBYGEMS_OWNER_ID }}
+      - run: |
+          published="$RUNNER_TEMP/published.gem"
+          for package in source/*.gem native/*.gem; do
+            status=$(curl --silent --show-error --location --retry 3 --output "$published" \
+              --write-out '%{http_code}' "https://rubygems.org/downloads/${package##*/}")
+            case "$status" in
+              200) cmp "$package" "$published" ;;
+              404) gem push "$package" ;;
+              *) echo "RubyGems returned HTTP $status for ${package##*/}" >&2; exit 1 ;;
+            esac
+          done
+
+  published-install:
+    needs: publish
+    strategy:
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+      - name: Grade from RubyGems.org with Bundler
+        run: |
+          consumer=$(mktemp -d)
+          cp bindings/ruby/examples/grade_response.rb "$consumer/"
+          cd "$consumer"
+          bundle init
+          bundle add genius-bench-kernel --version "= ${GITHUB_REF_NAME#v}"
+          bundle exec ruby -e 'abort "Bundler selected the source gem" if Gem.loaded_specs.fetch("genius-bench-kernel").platform == Gem::Platform::RUBY'
+          scores=$(bundle exec ruby grade_response.rb)
+          test "$scores" = $'correctness true\nscope false'

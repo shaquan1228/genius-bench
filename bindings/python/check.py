@@ -20,6 +20,7 @@ def main():
     )
     parser.add_argument("--uv", default=os.environ.get("UV", "uv"))
     parser.add_argument("--python", default="3.12")
+    parser.add_argument("--sdist", type=Path)
     args = parser.parse_args()
     run(
         [
@@ -49,19 +50,21 @@ def main():
     )
     with tempfile.TemporaryDirectory(prefix="kernel-source-") as directory:
         temporary = Path(directory)
-        run(
-            [
-                str(python),
-                "-m",
-                "maturin",
-                "sdist",
-                "--manifest-path",
-                str(PACKAGE / "Cargo.toml"),
-                "--out",
-                str(temporary),
-            ]
-        )
-        source = next(temporary.glob("*.tar.gz"))
+        source = args.sdist
+        if source is None:
+            run(
+                [
+                    str(python),
+                    "-m",
+                    "maturin",
+                    "sdist",
+                    "--manifest-path",
+                    str(PACKAGE / "Cargo.toml"),
+                    "--out",
+                    str(temporary),
+                ]
+            )
+            source = next(temporary.glob("*.tar.gz"))
         with tarfile.open(source) as archive:
             if any(
                 name.endswith(".so") or "__pycache__" in name
